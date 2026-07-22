@@ -1,0 +1,57 @@
+{% extends "dynamic_page.html" %}
+{% block title %}Báo cáo - Employee Task Scheduler{% endblock %}
+{% block page_title %}Báo cáo & Thống kê{% endblock %}
+
+{% block content %}
+<div class="stat-cards" style="grid-template-columns:repeat(2,1fr);">
+  <div class="stat-card">
+    <div class="stat-icon blue"><i class="bi bi-calendar2-week-fill"></i></div>
+    <div class="stat-label">Tổng ca đã phân công</div>
+    <div class="stat-value">{{ tong_lich }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon purple"><i class="bi bi-person-check-fill"></i></div>
+    <div class="stat-label">Số nhân viên đã có lịch</div>
+    <div class="stat-value">{{ tong_nv_co_lich }}</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-title"><i class="bi bi-bar-chart-line"></i> Khối lượng công việc theo nhân viên</div>
+  <div class="table-responsive">
+    <table class="table-generic">
+      <thead>
+        <tr><th>Nhân viên</th><th>Bộ phận</th><th>Số ca đã phân công</th><th>Tổng số giờ</th></tr>
+      </thead>
+      <tbody>
+        {% for row in stats %}
+        <tr>
+          <td><strong>{{ row.employee.ho_ten }}</strong> <span class="text-muted small">({{ row.employee.ma_nv }})</span></td>
+          <td>{{ row.employee.bo_phan or '-' }}</td>
+          <td><span class="chip chip-blue">{{ row.so_luong_ca }} ca</span></td>
+          <td>{{ row.tong_gio }} giờ</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-4">Chưa có dữ liệu.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-title"><i class="bi bi-building"></i> Thống kê theo bộ phận</div>
+  <div class="table-responsive">
+    <table class="table-generic">
+      <thead><tr><th>Bộ phận</th><th>Tổng số ca phân công</th></tr></thead>
+      <tbody>
+        {% for bp, count in bo_phan_stats.items() %}
+        <tr><td>{{ bp }}</td><td><span class="chip chip-green">{{ count }} ca</span></td></tr>
+        {% else %}
+        <tr><td colspan="2" class="text-center text-muted py-4">Chưa có dữ liệu.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

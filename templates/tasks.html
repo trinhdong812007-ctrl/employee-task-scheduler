@@ -1,0 +1,105 @@
+{% extends "dynamic_page.html" %}
+{% block title %}Công việc - Employee Task Scheduler{% endblock %}
+{% block page_title %}Quản lý công việc{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="data-toolbar">
+    <form class="d-flex" method="GET" style="gap:8px;">
+      <input type="text" name="q" class="form-control" placeholder="Tìm theo mã, tên công việc..." value="{{ q }}" style="width:280px;">
+      <button class="btn btn-outline-secondary"><i class="bi bi-search"></i></button>
+    </form>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTaskModal">
+      <i class="bi bi-plus-lg"></i> Thêm công việc
+    </button>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table-generic">
+      <thead>
+        <tr>
+          <th>Mã CV</th><th>Tên công việc</th><th>Mô tả</th><th>Độ ưu tiên</th><th>Thời lượng (giờ)</th><th style="text-align:right">Thao tác</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tasks %}
+        <tr>
+          <td><span class="chip chip-blue">{{ t.ma_cv }}</span></td>
+          <td><strong>{{ t.ten_cv }}</strong></td>
+          <td class="text-muted">{{ t.mo_ta or '-' }}</td>
+          <td>
+            {% if t.do_uu_tien == 'Khẩn cấp' %}<span class="chip chip-red">{{ t.do_uu_tien }}</span>
+            {% elif t.do_uu_tien == 'Cao' %}<span class="chip chip-orange">{{ t.do_uu_tien }}</span>
+            {% elif t.do_uu_tien == 'Trung bình' %}<span class="chip chip-blue">{{ t.do_uu_tien }}</span>
+            {% else %}<span class="chip chip-gray">{{ t.do_uu_tien }}</span>{% endif %}
+          </td>
+          <td>{{ t.thoi_luong }}</td>
+          <td style="text-align:right">
+            <button class="action-btn" data-bs-toggle="modal" data-bs-target="#editTaskModal{{ t.id }}"><i class="bi bi-pencil"></i></button>
+            <form method="POST" action="{{ url_for('task_delete', task_id=t.id) }}" class="d-inline" onsubmit="return confirm('Xóa công việc {{ t.ten_cv }}? Toàn bộ lịch phân công liên quan cũng sẽ bị xóa.');">
+              <button class="action-btn danger" type="submit"><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+
+        <!-- Modal sửa -->
+        <div class="modal fade" id="editTaskModal{{ t.id }}" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <form method="POST" action="{{ url_for('task_edit', task_id=t.id) }}">
+                <div class="modal-header"><h5 class="modal-title">Sửa công việc</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                  <div class="mb-2"><label class="form-label">Mã công việc</label><input class="form-control" name="ma_cv" value="{{ t.ma_cv }}" required></div>
+                  <div class="mb-2"><label class="form-label">Tên công việc</label><input class="form-control" name="ten_cv" value="{{ t.ten_cv }}" required></div>
+                  <div class="mb-2"><label class="form-label">Mô tả</label><textarea class="form-control" name="mo_ta" rows="2">{{ t.mo_ta or '' }}</textarea></div>
+                  <div class="mb-2"><label class="form-label">Độ ưu tiên</label>
+                    <select class="form-select" name="do_uu_tien">
+                      {% for level in do_uu_tien_list %}
+                      <option value="{{ level }}" {{ 'selected' if t.do_uu_tien==level }}>{{ level }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="mb-2"><label class="form-label">Thời lượng (giờ)</label><input class="form-control" type="number" step="0.5" name="thoi_luong" value="{{ t.thoi_luong }}"></div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
+                  <button type="submit" class="btn btn-primary">Lưu thay đổi</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <tr><td colspan="6" class="text-center text-muted py-4">Không có công việc nào.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal thêm -->
+<div class="modal fade" id="addTaskModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('task_add') }}">
+        <div class="modal-header"><h5 class="modal-title">Thêm công việc</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+          <div class="mb-2"><label class="form-label">Mã công việc</label><input class="form-control" name="ma_cv" placeholder="VD: CV011" required></div>
+          <div class="mb-2"><label class="form-label">Tên công việc</label><input class="form-control" name="ten_cv" required></div>
+          <div class="mb-2"><label class="form-label">Mô tả</label><textarea class="form-control" name="mo_ta" rows="2"></textarea></div>
+          <div class="mb-2"><label class="form-label">Độ ưu tiên</label>
+            <select class="form-select" name="do_uu_tien">
+              {% for level in do_uu_tien_list %}<option value="{{ level }}" {{ 'selected' if level=='Trung bình' }}>{{ level }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="mb-2"><label class="form-label">Thời lượng (giờ)</label><input class="form-control" type="number" step="0.5" name="thoi_luong" value="4"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-primary">Thêm mới</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
