@@ -13,7 +13,6 @@
 <body>
 <div class="app-wrapper">
 
-  <!-- SIDEBAR -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
       <img src="{{ url_for('static', filename='img/logo.svg') }}" class="brand-icon-img" alt="Logo">
@@ -23,41 +22,37 @@
       </div>
     </div>
     <nav class="sidebar-nav">
-      <a href="{{ url_for('dashboard') }}" class="nav-item {{ 'active' if request.endpoint=='dashboard' }}">
-        <i class="bi bi-house-door-fill"></i><span>Dashboard</span>
+      <a href="{{ url_for('lich_trinh') }}" class="nav-item {{ 'active' if request.endpoint in ['lich_trinh'] }}">
+        <i class="bi bi-calendar-week"></i><span>Lịch trình</span>
       </a>
-      <a href="{{ url_for('employees_page') }}" class="nav-item {{ 'active' if request.endpoint=='employees_page' }}">
-        <i class="bi bi-person"></i><span>Nhân viên</span>
+      <a href="{{ url_for('employees_page') }}" class="nav-item {{ 'active' if request.endpoint in ['employees_page'] }}">
+        <i class="bi bi-people"></i><span>Nhân viên</span>
       </a>
-      <a href="{{ url_for('tasks_page') }}" class="nav-item {{ 'active' if request.endpoint=='tasks_page' }}">
+      <a href="{{ url_for('tasks_page') }}" class="nav-item {{ 'active' if request.endpoint in ['tasks_page', 'task_assign'] }}">
         <i class="bi bi-clipboard-check"></i><span>Công việc</span>
-      </a>
-      <a href="{{ url_for('assign_page') }}" class="nav-item {{ 'active' if request.endpoint in ['assign_page'] }}">
-        <i class="bi bi-calendar-plus"></i><span>Phân công</span>
-      </a>
-      <a href="{{ url_for('week_page') }}" class="nav-item {{ 'active' if request.endpoint=='week_page' }}">
-        <i class="bi bi-calendar-week"></i><span>Lịch tuần</span>
       </a>
       <a href="{{ url_for('reports_page') }}" class="nav-item {{ 'active' if request.endpoint=='reports_page' }}">
         <i class="bi bi-bar-chart-line"></i><span>Báo cáo</span>
+      </a>
+      <a href="{{ url_for('import_data_page') }}" class="nav-item {{ 'active' if request.endpoint=='import_data_page' }}">
+        <i class="bi bi-cloud-arrow-up"></i><span>Nhập dữ liệu</span>
       </a>
     </nav>
     <div class="sidebar-user">
       <div class="user-avatar"><i class="bi bi-person-fill"></i></div>
       <div class="user-info">
-        <div class="user-name">admin</div>
+        <div class="user-name">Admin</div>
         <div class="user-role">Quản trị viên</div>
       </div>
       <i class="bi bi-chevron-down"></i>
     </div>
   </aside>
 
-  <!-- MAIN -->
   <div class="main-area">
     <header class="topbar">
       <div class="topbar-left">
         <button class="hamburger" id="hamburgerBtn"><i class="bi bi-list"></i></button>
-        <h1 class="page-title">{% block page_title %}Dashboard{% endblock %}</h1>
+        <h1 class="page-title">{% block page_title %}Lịch trình{% endblock %}</h1>
       </div>
       <div class="topbar-right">
         <div class="topbar-pill"><i class="bi bi-clock"></i><span id="clockNow"></span></div>

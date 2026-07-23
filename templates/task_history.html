@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Lịch sử - Employee Task Scheduler{% endblock %}
+{% block page_title %}Lịch sử công việc đã hoàn thành{% endblock %}
+
+{% block content %}
+<div class="sub-tabs mb-3">
+  <a href="{{ url_for('tasks_page') }}" class="sub-tab">
+    <i class="bi bi-list-task"></i> Danh sách công việc
+  </a>
+  <a href="{{ url_for('task_history') }}" class="sub-tab {{ 'active' if request.endpoint=='task_history' }}">
+    <i class="bi bi-clock-history"></i> Lịch sử
+  </a>
+  <a href="{{ url_for('task_assign') }}" class="sub-tab">
+    <i class="bi bi-person-plus"></i> Phân công
+  </a>
+</div>
+
+<div class="panel">
+  <div class="data-toolbar">
+    <form class="d-flex" method="GET" style="gap:8px;">
+      <input type="text" name="q" class="form-control" placeholder="Tìm theo mã, tên công việc..." value="{{ q }}" style="width:280px;">
+      <button class="btn btn-outline-secondary"><i class="bi bi-search"></i></button>
+    </form>
+    <span class="text-muted" style="font-size:13px">{{ tasks|length }} công việc đã hoàn thành</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table-generic">
+      <thead>
+        <tr>
+          <th>Mã CV</th><th>Tiêu đề</th><th>Bộ phận</th><th>Ngày bắt đầu</th><th>Ngày hoàn thành</th><th>Ưu tiên</th><th style="text-align:right">Thao tác</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tasks %}
+        <tr class="task-row" data-task-id="{{ t.id }}" style="cursor:pointer">
+          <td><span class="chip chip-blue">{{ t.ma_cv }}</span></td>
+          <td><a href="?detail={{ t.id }}" class="task-link">{{ t.ten_cv }}</a></td>
+          <td>{{ t.bo_phan or '-' }}</td>
+          <td>{{ t.ngay_gio.strftime('%d/%m/%Y') if t.ngay_gio else '-' }}</td>
+          <td>{{ t.completed_at.strftime('%d/%m/%Y %H:%M') if t.completed_at else '-' }}</td>
+          <td>
+            {% set bg = {'Khẩn cấp': 'rgba(239,68,68,0.18)', 'Cao': 'rgba(245,158,11,0.18)', 'Trung bình': 'rgba(59,130,246,0.18)', 'Thấp': 'rgba(107,114,128,0.18)'} %}
+            {% set color = {'Khẩn cấp': '#ef4444', 'Cao': '#f59e0b', 'Trung bình': '#3b82f6', 'Thấp': '#6b7280'} %}
+            <span class="priority-tag" style="background:{{ bg.get(t.do_uu_tien, 'rgba(59,130,246,0.18)') }};color:{{ color.get(t.do_uu_tien, '#3b82f6') }}">{{ t.do_uu_tien }}</span>
+          </td>
+          <td style="text-align:right" onclick="event.stopPropagation()">
+            <form method="POST" action="{{ url_for('task_delete', task_id=t.id) }}" class="d-inline" onsubmit="return confirm('Xóa vĩnh viễn công việc {{ t.ten_cv }}?');">
+              <button class="action-btn danger" type="submit" title="Xóa"><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-4">Chưa có công việc nào hoàn thành.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if detail_task %}
+<div class="modal fade" id="detailTaskModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Chi tiết công việc</h5>
+        <a href="{{ url_for('task_history', q=q) }}" class="btn-close"></a>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="detail-field">
+              <div class="detail-label">Mã công việc</div>
+              <div class="detail-value"><span class="chip chip-blue">{{ detail_task.ma_cv }}</span></div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="detail-field">
+              <div class="detail-label">Tên công việc</div>
+              <div class="detail-value" style="font-size:18px;font-weight:700">{{ detail_task.ten_cv }}</div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="detail-field">
+              <div class="detail-label">Ghi chú</div>
+              <div class="detail-value">{{ detail_task.ghi_chu or 'Không có ghi chú' }}</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="detail-field">
+              <div class="detail-label">Bộ phận</div>
+              <div class="detail-value">{{ detail_task.bo_phan or '-' }}</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="detail-field">
+              <div class="detail-label">Ngày bắt đầu</div>
+              <div class="detail-value">{{ detail_task.ngay_gio.strftime('%d/%m/%Y') if detail_task.ngay_gio else 'Chưa đặt' }}</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="detail-field">
+              <div class="detail-label">Ngày hoàn thành</div>
+              <div class="detail-value">{{ detail_task.completed_at.strftime('%d/%m/%Y %H:%M') if detail_task.completed_at else '-' }}</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="detail-field">
+              <div class="detail-label">Độ ưu tiên</div>
+              <div class="detail-value">
+                <span class="priority-tag" style="background:{{ do_uu_tien_bg.get(detail_task.do_uu_tien, 'rgba(59,130,246,0.18)') }};color:{{ do_uu_tien_colors.get(detail_task.do_uu_tien, '#3b82f6') }}">{{ detail_task.do_uu_tien }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="detail-field">
+              <div class="detail-label">Số lượng NV đã phân công</div>
+              <div class="detail-value">{{ detail_assignments|length }} / {{ detail_task.so_luong_nv }} NV</div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="detail-field">
+              <div class="detail-label">Thời lượng</div>
+              <div class="detail-value">{{ detail_task.thoi_luong }} giờ</div>
+            </div>
+          </div>
+        </div>
+
+        {% if detail_assignments %}
+        <hr style="border-color:var(--border-color);margin:20px 0">
+        <div class="detail-label mb-2" style="font-size:15px;color:var(--text-main)"><i class="bi bi-people-fill"></i> Nhân viên đã được phân công</div>
+        <table class="table-generic" style="font-size:13px">
+          <thead>
+            <tr><th>Nhân viên</th><th>Mã NV</th><th>Vị trí</th><th>Ngày</th><th>Ca</th></tr>
+          </thead>
+          <tbody>
+            {% for s, emp in detail_assignments %}
+            <tr>
+              <td>{{ emp.ho_ten }}</td>
+              <td><span class="chip chip-blue">{{ emp.ma_nv }}</span></td>
+              <td>{{ emp.vi_tri or '-' }}</td>
+              <td>{{ s.ngay_lam_viec.strftime('%d/%m/%Y') }}</td>
+              <td><span class="badge-ca {{ 'badge-sang' if s.ca=='Sáng' else 'badge-chieu' }}">{{ s.ca }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="text-center text-muted py-3">Chưa có nhân viên nào được phân công.</div>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <a href="{{ url_for('task_history', q=q if q else none) }}" class="btn btn-light">Đóng</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<style>
+.sub-tabs{ display:flex; gap:0; border-bottom:2px solid var(--border-color); }
+.sub-tab{ padding:10px 20px; text-decoration:none; color:var(--text-muted); font-weight:600; font-size:14px; border-bottom:2px solid transparent; margin-bottom:-2px; transition:.15s; }
+.sub-tab:hover{ color:var(--text-main); }
+.sub-tab.active{ color:var(--blue); border-bottom-color:var(--blue); }
+.sub-tab i{ margin-right:6px; }
+.priority-tag{ display:inline-block; padding:2px 10px; border-radius:12px; font-size:11.5px; font-weight:600; }
+.task-link{ color:var(--text-main); text-decoration:none; font-weight:600; cursor:pointer; }
+.task-link:hover{ color:var(--blue); text-decoration:underline; }
+.detail-field{ margin-bottom:8px; }
+.detail-label{ font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:2px; text-transform:uppercase; letter-spacing:0.3px; }
+.detail-value{ font-size:14px; color:var(--text-main); }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{% if detail_task %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var modal = new bootstrap.Modal(document.getElementById('detailTaskModal'));
+  modal.show();
+});
+</script>
+{% endif %}
+<script>
+document.querySelectorAll('.task-row').forEach(function(row) {
+  row.addEventListener('click', function() {
+    var taskId = this.dataset.taskId;
+    window.location.href = '?detail=' + taskId;
+  });
+});
+</script>
+{% endblock %}

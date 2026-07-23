@@ -1,0 +1,430 @@
+{% extends "base.html" %}
+{% block title %}Phân công - Employee Task Scheduler{% endblock %}
+{% block page_title %}Phân công nhân viên{% endblock %}
+
+{% block content %}
+<div class="sub-tabs mb-3">
+  <a href="{{ url_for('tasks_page') }}" class="sub-tab">
+    <i class="bi bi-list-task"></i> Danh sách công việc
+  </a>
+  <a href="{{ url_for('task_assign') }}" class="sub-tab active">
+    <i class="bi bi-person-plus"></i> Phân công
+  </a>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-5">
+    <div class="panel">
+      <div class="panel-title"><i class="bi bi-calendar-plus"></i> Phân công nhân viên</div>
+
+      <div class="mb-3">
+        <label class="form-label">Chọn công việc</label>
+        <select id="assign_task_id" class="form-select">
+          <option value="">-- Chọn công việc --</option>
+          {% for t in tasks %}
+          <option value="{{ t.id }}" data-bo-phan="{{ t.bo_phan or '' }}" data-ngay="{{ t.ngay_gio.strftime('%Y-%m-%d') if t.ngay_gio else '' }}" data-so-luong="{{ t.so_luong_nv }}" data-do-uu-tien="{{ t.do_uu_tien }}" data-ca-requirement="{{ t.ca_requirement or 'Sáng' }}" {{ 'selected' if request.args.get('task_id')|string==t.id|string }}>
+            {{ t.ten_cv }} ({{ t.ma_cv }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div id="taskInfo" class="d-none mb-3">
+        <div class="p-3" style="background:var(--panel-bg-soft);border-radius:10px;">
+          <strong id="ti_title"></strong>
+          <div class="text-muted small mt-1">
+            <span id="ti_dept"></span> &middot;
+            <span id="ti_date"></span> &middot;
+            Cần <span id="ti_sl"></span> nhân viên
+          </div>
+          <div class="mt-1">
+            Độ ưu tiên: <span id="ti_priority" class="priority-tag"></span>
+          </div>
+          <div class="mt-1">
+            Ca yêu cầu: <span id="ti_ca" class="fw-semibold"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Ca làm việc</label>
+        <select id="assign_ca" class="form-select">
+          <option value="Sáng">Ca sáng (07:30 - 11:30)</option>
+          <option value="Chiều">Ca chiều (13:00 - 17:00)</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Bộ lọc vị trí</label>
+        <select id="filter_vi_tri" class="form-select">
+          <option value="">-- Tất cả vị trí --</option>
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Bộ lọc trình độ</label>
+        <select id="filter_trinh_do" class="form-select" disabled>
+          <option value="">-- Chọn vị trí trước --</option>
+          {% for td in trinh_do_list %}
+          <option value="{{ td }}">{{ td }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button id="loadEmployeesBtn" class="btn btn-primary-block" disabled>
+        <i class="bi bi-search"></i> Hiển thị nhân viên
+      </button>
+    </div>
+  </div>
+
+  <div class="col-md-7">
+    <div class="panel">
+      <div class="panel-title"><i class="bi bi-people-fill"></i> Danh sách nhân viên
+        <span id="selectedCount" class="badge bg-primary ms-2 d-none">0</span>
+      </div>
+      <div id="employeeList" class="d-none">
+        <div class="mb-2 text-muted small">
+          <span id="empCountDisplay">0</span> nhân viên được tìm thấy
+        </div>
+        <div id="employeeCards" class="emp-grid"></div>
+        <button id="saveAssignBtn" class="btn btn-primary-block mt-3 d-none">
+          <i class="bi bi-save2"></i> Lưu phân công
+        </button>
+        <div id="assignResult" class="mt-2"></div>
+      </div>
+      <div id="noSelection" class="text-center text-muted py-5">
+        <i class="bi bi-arrow-left" style="font-size:32px;display:block;margin-bottom:10px;"></i>
+        Chọn công việc và bộ lọc để bắt đầu phân công
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title"><i class="bi bi-clock-history"></i> Phân công gần đây</div>
+      <div class="table-responsive" style="max-height:300px;overflow-y:auto;">
+        <table class="table-generic">
+          <thead><tr><th>NV</th><th>Công việc</th><th>Ngày</th><th>Ca</th><th>Ưu tiên</th><th style="text-align:right">Thao tác</th></tr></thead>
+          <tbody>
+            {% for s, emp, task in recent %}
+            <tr>
+              <td><strong>{{ emp.ho_ten }}</strong><br><span class="text-muted small">{{ emp.ma_nv }}</span></td>
+              <td>{{ task.ten_cv }}</td>
+              <td>{{ s.ngay_lam_viec.strftime('%d/%m/%Y') }}</td>
+              <td><span class="badge-ca {{ 'badge-sang' if s.ca=='Sáng' else 'badge-chieu' }}">{{ s.ca }}</span></td>
+              <td><span class="priority-tag" style="background:{{ do_uu_tien_bg.get(task.do_uu_tien, 'rgba(59,130,246,0.18)') }};color:{{ do_uu_tien_colors.get(task.do_uu_tien, '#3b82f6') }}">{{ task.do_uu_tien }}</span></td>
+              <td style="text-align:right">
+                <form method="POST" action="{{ url_for('schedule_delete', sch_id=s.id) }}" onsubmit="return confirm('Xóa phân công này?');">
+                  <button class="action-btn danger" type="submit"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">Chưa có phân công nào.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.sub-tabs{ display:flex; gap:0; border-bottom:2px solid var(--border-color); margin-top:-8px; }
+.sub-tab{ padding:10px 20px; text-decoration:none; color:var(--text-muted); font-weight:600; font-size:14px; border-bottom:2px solid transparent; margin-bottom:-2px; transition:.15s; }
+.sub-tab:hover{ color:var(--text-main); }
+.sub-tab.active{ color:var(--blue); border-bottom-color:var(--blue); }
+.sub-tab i{ margin-right:6px; }
+.emp-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.emp-card{ background:var(--panel-bg-soft); border:2px solid var(--border-color); border-radius:12px; padding:14px; cursor:pointer; transition:.15s; position:relative; }
+.emp-card:hover{ border-color:var(--blue); }
+.emp-card.selected{ border-color:var(--blue); background:rgba(59,130,246,0.08); }
+.emp-card .emp-name{ font-weight:600; font-size:14px; }
+.emp-card .emp-detail{ font-size:12px; color:var(--text-muted); }
+.emp-card .emp-check{ position:absolute; top:8px; right:8px; width:20px;height:20px;border-radius:50%;border:2px solid var(--border-color); display:flex;align-items:center;justify-content:center; }
+.emp-card.selected .emp-check{ background:var(--blue); border-color:var(--blue); color:#fff; }
+.emp-card.unavailable{ opacity:0.5; cursor:not-allowed; }
+.priority-tag{ display:inline-block; padding:2px 10px; border-radius:12px; font-size:11.5px; font-weight:600; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const VI_TRI_MAP = {{ vi_tri_map | tojson }};
+
+let selectedEmployees = {};
+let taskNeedCount = 1;
+
+function getPriorityStyles(priority) {
+  const backgrounds = {
+    'Khẩn cấp': 'rgba(239,68,68,0.18)',
+    'Cao': 'rgba(245,158,11,0.18)',
+    'Trung bình': 'rgba(59,130,246,0.18)',
+    'Thấp': 'rgba(148,163,184,0.18)',
+  };
+  const colors = {
+    'Khẩn cấp': '#ef4444',
+    'Cao': '#f59e0b',
+    'Trung bình': '#3b82f6',
+    'Thấp': '#94a3b8',
+  };
+  return {
+    background: backgrounds[priority] || backgrounds['Trung bình'],
+    color: colors[priority] || colors['Trung bình'],
+  };
+}
+
+function renderSelections() {
+  document.querySelectorAll('.emp-card').forEach(function(card) {
+    const empId = parseInt(card.dataset.empId || '0');
+    const check = card.querySelector('.emp-check');
+    if (selectedEmployees[empId]) {
+      card.classList.add('selected');
+      if (check) check.innerHTML = '<i class="bi bi-check" style="font-size:12px"></i>';
+    } else {
+      card.classList.remove('selected');
+      if (check) check.innerHTML = '';
+    }
+  });
+  updateSelectedCount();
+}
+
+function updateSelectedCount() {
+  const selectedCount = document.getElementById('selectedCount');
+  const saveBtn = document.getElementById('saveAssignBtn');
+  const count = Object.keys(selectedEmployees).length;
+
+  if (count > 0) {
+    selectedCount.classList.remove('d-none');
+    selectedCount.textContent = `${count} / ${taskNeedCount} đã chọn`;
+    saveBtn.classList.remove('d-none');
+  } else {
+    selectedCount.classList.add('d-none');
+    saveBtn.classList.add('d-none');
+  }
+}
+
+function createEmployeeCard(emp) {
+  const card = document.createElement('div');
+  card.dataset.empId = emp.id;
+  card.className = 'emp-card' + (emp.available ? '' : ' unavailable');
+  if (selectedEmployees[emp.id]) card.classList.add('selected');
+
+  let trinhDoClass = 'chip-gray';
+  if (emp.trinh_do === 'Chuyên gia') trinhDoClass = 'chip-red';
+  else if (emp.trinh_do === 'Thành thạo') trinhDoClass = 'chip-orange';
+  else if (emp.trinh_do === 'Khá') trinhDoClass = 'chip-green';
+
+  card.innerHTML = `
+    <div class="emp-check">${selectedEmployees[emp.id] ? '<i class="bi bi-check" style="font-size:12px"></i>' : ''}</div>
+    <div class="emp-name">${emp.ho_ten}</div>
+    <div class="emp-detail">${emp.ma_nv} &middot; ${emp.vi_tri || '-'}</div>
+    <div class="emp-detail mt-1"><span class="chip ${trinhDoClass}">${emp.trinh_do}</span></div>
+    ${!emp.available ? '<div class="emp-detail text-danger mt-1">' + emp.msg + '</div>' : ''}
+  `;
+
+  if (emp.available) {
+    card.addEventListener('click', function() {
+      const assignResult = document.getElementById('assignResult');
+      if (selectedEmployees[emp.id]) {
+        delete selectedEmployees[emp.id];
+        assignResult.innerHTML = '';
+      } else if (Object.keys(selectedEmployees).length < taskNeedCount) {
+        selectedEmployees[emp.id] = emp;
+        assignResult.innerHTML = '';
+      } else {
+        assignResult.innerHTML = `<div class="text-warning">Không thể chọn quá ${taskNeedCount} nhân viên.</div>`;
+      }
+      renderSelections();
+    });
+  }
+
+  return card;
+}
+
+function populateTrinhDoOptions() {
+  const trinhDoFilter = document.getElementById('filter_trinh_do');
+  trinhDoFilter.innerHTML = '<option value="">-- Tất cả trình độ --</option>';
+  {% for td in trinh_do_list %}
+  trinhDoFilter.innerHTML += '<option value="{{ td }}">{{ td }}</option>';
+  {% endfor %}
+}
+
+function updateViTriFilter() {
+  const taskSelect = document.getElementById('assign_task_id');
+  const viTriFilter = document.getElementById('filter_vi_tri');
+  const taskOpt = taskSelect.options[taskSelect.selectedIndex];
+  const boPhan = taskOpt ? taskOpt.getAttribute('data-bo-phan') : '';
+
+  viTriFilter.innerHTML = '<option value="">-- Tất cả vị trí --</option>';
+  if (boPhan && VI_TRI_MAP[boPhan]) {
+    VI_TRI_MAP[boPhan].forEach(function(vt) {
+      const opt = document.createElement('option');
+      opt.value = vt;
+      opt.textContent = vt;
+      viTriFilter.appendChild(opt);
+    });
+  }
+}
+
+function updateTaskInfo() {
+  const taskSelect = document.getElementById('assign_task_id');
+  const taskInfo = document.getElementById('taskInfo');
+  const loadBtn = document.getElementById('loadEmployeesBtn');
+  const taskOpt = taskSelect.options[taskSelect.selectedIndex];
+
+  if (!taskOpt || !taskOpt.value) {
+    taskInfo.classList.add('d-none');
+    loadBtn.disabled = true;
+    return;
+  }
+
+  taskInfo.classList.remove('d-none');
+  document.getElementById('ti_title').textContent = taskOpt.textContent;
+  document.getElementById('ti_dept').textContent = taskOpt.getAttribute('data-bo-phan') || 'Chưa có bộ phận';
+  document.getElementById('ti_date').textContent = taskOpt.getAttribute('data-ngay') || 'Chưa chọn ngày';
+  document.getElementById('ti_sl').textContent = taskOpt.getAttribute('data-so-luong') || '1';
+  taskNeedCount = parseInt(taskOpt.getAttribute('data-so-luong') || '1', 10);
+  const uuTien = taskOpt.getAttribute('data-do-uu-tien') || 'Trung bình';
+  const styles = getPriorityStyles(uuTien);
+  const tiPriority = document.getElementById('ti_priority');
+  tiPriority.textContent = uuTien;
+  tiPriority.style.background = styles.background;
+  tiPriority.style.color = styles.color;
+  const taskCa = taskOpt.getAttribute('data-ca-requirement') || 'Sáng';
+  document.getElementById('ti_ca').textContent = taskCa;
+  document.getElementById('assign_ca').value = taskCa;
+  loadBtn.disabled = false;
+}
+
+async function loadEmployees() {
+  const taskSelect = document.getElementById('assign_task_id');
+  const taskOpt = taskSelect.options[taskSelect.selectedIndex];
+  const empCards = document.getElementById('employeeCards');
+  const empList = document.getElementById('employeeList');
+  const noSel = document.getElementById('noSelection');
+  const empCountDisplay = document.getElementById('empCountDisplay');
+
+  if (!taskOpt || !taskOpt.value) {
+    return;
+  }
+
+  const payload = {
+    task_id: parseInt(taskOpt.value, 10),
+    ca: document.getElementById('assign_ca').value || taskOpt.getAttribute('data-ca-requirement') || 'Sáng',
+    vi_tri: document.getElementById('filter_vi_tri').value || '',
+    trinh_do: document.getElementById('filter_trinh_do').value || '',
+  };
+  const url = '{{ url_for("assign_get_employees") }}';
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const employees = await response.json();
+
+    empCards.innerHTML = '';
+    noSel.classList.add('d-none');
+    empList.classList.remove('d-none');
+    selectedEmployees = {};
+
+    if (!Array.isArray(employees) || employees.length === 0) {
+      empCards.innerHTML = '<div class="text-center text-muted py-4 col-span-2">Không tìm thấy nhân viên phù hợp.</div>';
+      empCountDisplay.textContent = '0';
+      document.getElementById('saveAssignBtn').classList.add('d-none');
+      return;
+    }
+
+    empCountDisplay.textContent = employees.length;
+    employees.forEach(function(emp) {
+      empCards.appendChild(createEmployeeCard(emp));
+    });
+
+    renderSelections();
+  } catch (error) {
+    empCards.innerHTML = '<div class="text-center text-danger py-4">Lỗi tải dữ liệu.</div>';
+  }
+}
+
+async function saveAssignment() {
+  const taskSelect = document.getElementById('assign_task_id');
+  const taskId = parseInt(taskSelect.value, 10);
+  const assignCa = document.getElementById('assign_ca').value || 'Sáng';
+  const employeeIds = Object.keys(selectedEmployees).map((id) => parseInt(id, 10));
+  const assignResult = document.getElementById('assignResult');
+
+  if (!taskId || employeeIds.length === 0) {
+    assignResult.innerHTML = '<div class="text-danger">Vui lòng chọn công việc và nhân viên.</div>';
+    return;
+  }
+
+  try {
+    const response = await fetch('{{ url_for("assign_save") }}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({task_id: taskId, employee_ids: employeeIds, ca: assignCa}),
+    });
+    const data = await response.json();
+
+    if (response.ok) {
+      assignResult.innerHTML = `<div class="text-success">Đã phân công ${data.assigned} nhân viên.</div>`;
+      if (data.errors && data.errors.length) {
+        assignResult.innerHTML += `<div class="text-warning mt-2">${data.errors.join('<br>')}</div>`;
+      }
+      loadEmployees();
+    } else {
+      assignResult.innerHTML = `<div class="text-danger">${data.error || 'Có lỗi xảy ra.'}</div>`;
+    }
+  } catch (error) {
+    assignResult.innerHTML = '<div class="text-danger">Lỗi kết nối khi lưu phân công.</div>';
+  }
+}
+
+function initializePage() {
+  const taskSelect = document.getElementById('assign_task_id');
+  const viTriFilter = document.getElementById('filter_vi_tri');
+  const trinhDoFilter = document.getElementById('filter_trinh_do');
+  const loadBtn = document.getElementById('loadEmployeesBtn');
+
+  taskSelect.addEventListener('change', function() {
+    selectedEmployees = {};
+    renderSelections();
+    document.getElementById('employeeList').classList.add('d-none');
+    document.getElementById('noSelection').classList.remove('d-none');
+    updateTaskInfo();
+  });
+
+  viTriFilter.addEventListener('change', function() {
+    if (this.value) {
+      populateTrinhDoOptions();
+      trinhDoFilter.disabled = false;
+    } else {
+      trinhDoFilter.innerHTML = '<option value="">-- Chọn vị trí trước --</option>';
+      trinhDoFilter.disabled = true;
+    }
+  });
+
+  const assignCa = document.getElementById('assign_ca');
+  const saveBtn = document.getElementById('saveAssignBtn');
+
+  loadBtn.addEventListener('click', function() {
+    loadEmployees();
+  });
+
+  assignCa.addEventListener('change', function() {
+    if (!document.getElementById('employeeList').classList.contains('d-none')) {
+      loadEmployees();
+    }
+  });
+
+  saveBtn.addEventListener('click', function() {
+    saveAssignment();
+  });
+
+  if (document.getElementById('assign_task_id').value) {
+    updateTaskInfo();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', initializePage);
+</script>
+{% endblock %}

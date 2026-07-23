@@ -1,4 +1,4 @@
-{% extends "dynamic_page.html" %}
+{% extends "base.html" %}
 {% block title %}Báo cáo - Employee Task Scheduler{% endblock %}
 {% block page_title %}Báo cáo & Thống kê{% endblock %}
 
@@ -21,18 +21,26 @@
   <div class="table-responsive">
     <table class="table-generic">
       <thead>
-        <tr><th>Nhân viên</th><th>Bộ phận</th><th>Số ca đã phân công</th><th>Tổng số giờ</th></tr>
+        <tr><th>Nhân viên</th><th>Bộ phận</th><th>Vị trí</th><th>Trình độ</th><th>Số ca đã phân công</th><th>Tổng số giờ</th></tr>
       </thead>
       <tbody>
         {% for row in stats %}
         <tr>
           <td><strong>{{ row.employee.ho_ten }}</strong> <span class="text-muted small">({{ row.employee.ma_nv }})</span></td>
           <td>{{ row.employee.bo_phan or '-' }}</td>
+          <td>{{ row.employee.vi_tri or '-' }}</td>
+          <td>
+            {% set td = row.employee.trinh_do %}
+            {% if td == 'Chuyên gia' %}<span class="chip chip-red">{{ td }}</span>
+            {% elif td == 'Thành thạo' %}<span class="chip chip-orange">{{ td }}</span>
+            {% elif td == 'Khá' %}<span class="chip chip-green">{{ td }}</span>
+            {% else %}<span class="chip chip-gray">{{ td or '-' }}</span>{% endif %}
+          </td>
           <td><span class="chip chip-blue">{{ row.so_luong_ca }} ca</span></td>
-          <td>{{ row.tong_gio }} giờ</td>
+          <td>{{ row.tong_gio }} gio</td>
         </tr>
         {% else %}
-        <tr><td colspan="4" class="text-center text-muted py-4">Chưa có dữ liệu.</td></tr>
+        <tr><td colspan="6" class="text-center text-muted py-4">Chưa có dữ liệu.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -43,7 +51,7 @@
   <div class="panel-title"><i class="bi bi-building"></i> Thống kê theo bộ phận</div>
   <div class="table-responsive">
     <table class="table-generic">
-      <thead><tr><th>Bộ phận</th><th>Tổng số ca phân công</th></tr></thead>
+        <thead><tr><th>Bộ phận</th><th>Tổng số ca phân công</th></tr></thead>
       <tbody>
         {% for bp, count in bo_phan_stats.items() %}
         <tr><td>{{ bp }}</td><td><span class="chip chip-green">{{ count }} ca</span></td></tr>

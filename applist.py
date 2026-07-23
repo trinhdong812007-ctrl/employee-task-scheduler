@@ -2,24 +2,17 @@
 """
 applist.py
 Employee Task Scheduler - Hệ thống phân công công việc nhân viên
-Đồ án môn: Lập trình Python (Flask + SQLite + SQLAlchemy)
-
-Cách chạy:
-    pip install -r requirements.txt
-    python applist.py
-Mặc định chạy tại: http://127.0.0.1:5000
 """
 
+import csv
+import io
 import os
 from datetime import datetime, timedelta, date
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 
-# --------------------------------------------------------------------------
-# CẤU HÌNH ỨNG DỤNG
-# --------------------------------------------------------------------------
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
@@ -29,38 +22,33 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-# --------------------------------------------------------------------------
-# HẰNG SỐ DÙNG CHUNG
-# --------------------------------------------------------------------------
-CA_LAM_VIEC = {
-    "Sáng": "07:30 - 11:30",
-    "Chiều": "13:00 - 17:00",
+CA_LAM_VIEC = {"Sáng": "07:30 - 11:30", "Chiều": "13:00 - 17:00"}
+THU_TRONG_TUAN = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"]
+DO_UU_TIEN_LIST = ["Thấp", "Trung bình", "Cao", "Khẩn cấp"]
+TRINH_DO_LIST = ["Cơ bản", "Khá", "Thành thạo", "Chuyên gia"]
+
+VI_TRI_MAP = {
+    "Kỹ thuật": ["Kỹ sư", "Kỹ thuật viên", "Trưởng phòng Kỹ thuật", "Phó phòng Kỹ thuật"],
+    "Kinh doanh": ["Nhân viên Kinh doanh", "Trưởng phòng Kinh doanh", "Chuyên viên Kinh doanh"],
+    "Kế toán": ["Kế toán viên", "Kế toán trưởng", "Kế toán tổng hợp"],
+    "Hành chính": ["Nhân viên Hành chính", "Trưởng phòng Hành chính", "Thư ký"],
+    "IT Support": ["Nhân viên IT", "Trưởng nhóm IT", "Chuyên viên IT"],
+    "Nhân sự": ["Nhân viên Nhân sự", "Trưởng phòng Nhân sự", "Chuyên viên Nhân sự"],
+    "Marketing": ["Nhân viên Marketing", "Trưởng phòng Marketing", "Chuyên viên Marketing"],
 }
 
-THU_TRONG_TUAN = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"]  # T2 -> T7 (nghỉ CN)
 
-DO_UU_TIEN_LIST = ["Thấp", "Trung bình", "Cao", "Khẩn cấp"]
-
-
-# --------------------------------------------------------------------------
-# MÔ HÌNH DỮ LIỆU (MODELS)
-# --------------------------------------------------------------------------
 class Employee(db.Model):
-    """Bảng Nhân viên"""
     __tablename__ = "employee"
-
     id = db.Column(db.Integer, primary_key=True)
     ma_nv = db.Column(db.String(20), unique=True, nullable=False)
     ho_ten = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(120))
-    sdt = db.Column(db.String(20))
     bo_phan = db.Column(db.String(80))
-    chuc_vu = db.Column(db.String(80))
+    vi_tri = db.Column(db.String(80))
+    trinh_do = db.Column(db.String(20), default="Cơ bản")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    schedules = db.relationship(
-        "Schedule", backref="employee", cascade="all, delete-orphan", lazy=True
-    )
+    schedules = db.relationship("Schedule", backref="employee", cascade="all, delete-orphan", lazy=True)
 
     def to_dict(self):
         return {
@@ -68,70 +56,65 @@ class Employee(db.Model):
             "ma_nv": self.ma_nv,
             "ho_ten": self.ho_ten,
             "email": self.email,
-            "sdt": self.sdt,
             "bo_phan": self.bo_phan,
-            "chuc_vu": self.chuc_vu,
+            "vi_tri": self.vi_tri,
+            "trinh_do": self.trinh_do,
         }
 
 
 class Task(db.Model):
-    """Bảng Công việc"""
     __tablename__ = "task"
-
     id = db.Column(db.Integer, primary_key=True)
     ma_cv = db.Column(db.String(20), unique=True, nullable=False)
     ten_cv = db.Column(db.String(150), nullable=False)
-    mo_ta = db.Column(db.Text)
+    ghi_chu = db.Column(db.Text)
     do_uu_tien = db.Column(db.String(20), default="Trung bình")
-    thoi_luong = db.Column(db.Float, default=1.0)  # đơn vị: giờ
+    ngay_gio = db.Column(db.DateTime)
+    bo_phan = db.Column(db.String(80))
+    so_luong_nv = db.Column(db.Integer, default=1)
+    thoi_luong = db.Column(db.Float, default=1.0)
+    ca_requirement = db.Column(db.String(20), default="Sáng")
+    completed = db.Column(db.Boolean, default=False)
+    completed_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    schedules = db.relationship(
-        "Schedule", backref="task", cascade="all, delete-orphan", lazy=True
-    )
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    schedules = db.relationship("Schedule", backref="task", cascade="all, delete-orphan", lazy=True)
 
     def to_dict(self):
         return {
             "id": self.id,
             "ma_cv": self.ma_cv,
             "ten_cv": self.ten_cv,
-            "mo_ta": self.mo_ta,
+            "ghi_chu": self.ghi_chu,
             "do_uu_tien": self.do_uu_tien,
+            "ngay_gio": self.ngay_gio.strftime("%Y-%m-%d") if self.ngay_gio else "",
+            "bo_phan": self.bo_phan,
+            "so_luong_nv": self.so_luong_nv,
             "thoi_luong": self.thoi_luong,
         }
 
 
 class Schedule(db.Model):
-    """Bảng Phân công (lịch làm việc)"""
     __tablename__ = "schedule"
-
     id = db.Column(db.Integer, primary_key=True)
     employee_id = db.Column(db.Integer, db.ForeignKey("employee.id"), nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey("task.id"), nullable=False)
     ngay_lam_viec = db.Column(db.Date, nullable=False)
-    ca = db.Column(db.String(10), nullable=False)  # 'Sáng' hoặc 'Chiều'
-    ghi_chu = db.Column(db.String(255))
+    ca = db.Column(db.String(10), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        db.UniqueConstraint("employee_id", "ngay_lam_viec", "ca", name="uq_emp_day_ca"),
-    )
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint("employee_id", "ngay_lam_viec", "ca", name="uq_emp_day_ca"),)
 
 
 class Page(db.Model):
-    """Bảng lưu trữ đường dẫn động (Dynamic Routes)"""
     __tablename__ = "page"
-
     id = db.Column(db.Integer, primary_key=True)
-    slug = db.Column(db.String(100), unique=True, nullable=False)  # Ví dụ: "huong-dan"
+    slug = db.Column(db.String(100), unique=True, nullable=False)
     tieu_de = db.Column(db.String(200), nullable=False)
     noi_dung = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
-# --------------------------------------------------------------------------
-# HÀM TIỆN ÍCH
-# --------------------------------------------------------------------------
 def parse_date(value, default=None):
     try:
         return datetime.strptime(value, "%Y-%m-%d").date()
@@ -139,101 +122,251 @@ def parse_date(value, default=None):
         return default or date.today()
 
 
-def get_week_start(d: date) -> date:
-    """Trả về ngày Thứ Hai của tuần chứa ngày d"""
+def touch_last_update():
+    update_file = os.path.join(BASE_DIR, ".last_update")
+    with open(update_file, "w", encoding="utf-8") as f:
+        f.write(datetime.utcnow().isoformat())
+    os.utime(update_file, None)
+    return update_file
+
+
+def normalize_text(value):
+    return str(value).strip() if value is not None else ""
+
+
+def parse_date_value(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d").date()
+    except ValueError:
+        try:
+            return datetime.strptime(str(value), "%d/%m/%Y").date()
+        except ValueError:
+            return None
+
+
+def validate_employee_payload(data):
+    errors = []
+    ma_nv = normalize_text(data.get("ma_nv"))
+    ho_ten = normalize_text(data.get("ho_ten"))
+    email = normalize_text(data.get("email"))
+    bo_phan = normalize_text(data.get("bo_phan"))
+    vi_tri = normalize_text(data.get("vi_tri"))
+    trinh_do = normalize_text(data.get("trinh_do"))
+
+    if not ma_nv:
+        errors.append("Mã nhân viên là bắt buộc.")
+    if not ho_ten:
+        errors.append("Họ tên là bắt buộc.")
+    if not email:
+        errors.append("Email là bắt buộc.")
+    if not bo_phan:
+        errors.append("Bộ phận là bắt buộc.")
+    if not vi_tri:
+        errors.append("Vị trí là bắt buộc.")
+    if not trinh_do:
+        errors.append("Trình độ là bắt buộc.")
+    if bo_phan and bo_phan not in VI_TRI_MAP:
+        errors.append("Bộ phận không hợp lệ.")
+    if bo_phan and vi_tri and bo_phan in VI_TRI_MAP and vi_tri not in VI_TRI_MAP[bo_phan]:
+        errors.append("Vị trí không phù hợp với bộ phận đã chọn.")
+    if trinh_do and trinh_do not in TRINH_DO_LIST:
+        errors.append("Trình độ không hợp lệ.")
+    return errors
+
+
+def validate_task_payload(data):
+    errors = []
+    ma_cv = normalize_text(data.get("ma_cv"))
+    ten_cv = normalize_text(data.get("ten_cv"))
+    do_uu_tien = normalize_text(data.get("do_uu_tien"))
+    ngay_gio = normalize_text(data.get("ngay_gio"))
+    bo_phan = normalize_text(data.get("bo_phan"))
+    so_luong_nv = data.get("so_luong_nv")
+    thoi_luong = data.get("thoi_luong")
+
+    if not ma_cv:
+        errors.append("Mã công việc là bắt buộc.")
+    if not ten_cv:
+        errors.append("Tên công việc là bắt buộc.")
+    if not do_uu_tien:
+        errors.append("Độ ưu tiên là bắt buộc.")
+    if not ngay_gio:
+        errors.append("Ngày công việc là bắt buộc.")
+    if not bo_phan:
+        errors.append("Bộ phận là bắt buộc.")
+    if do_uu_tien and do_uu_tien not in DO_UU_TIEN_LIST:
+        errors.append("Độ ưu tiên không hợp lệ.")
+    if bo_phan and bo_phan not in VI_TRI_MAP:
+        errors.append("Bộ phận không hợp lệ.")
+
+    try:
+        so_luong_nv_i = int(so_luong_nv)
+        if so_luong_nv_i < 1:
+            errors.append("Số lượng nhân viên phải lớn hơn 0.")
+    except (TypeError, ValueError):
+        errors.append("Số lượng nhân viên phải là số nguyên.")
+
+    try:
+        thoi_luong_f = float(thoi_luong)
+        if thoi_luong_f <= 0:
+            errors.append("Thời lượng phải lớn hơn 0.")
+    except (TypeError, ValueError):
+        errors.append("Thời lượng phải là số.")
+
+    return errors
+
+
+def get_week_start(d):
     return d - timedelta(days=d.weekday())
 
 
 def check_trung_ca(employee_id, ngay_lam_viec, ca, exclude_id=None):
-    """Kiểm tra nhân viên đã có lịch trong ca này của ngày này chưa"""
-    query = Schedule.query.filter_by(
-        employee_id=employee_id, ngay_lam_viec=ngay_lam_viec, ca=ca
-    )
+    query = Schedule.query.filter_by(employee_id=employee_id, ngay_lam_viec=ngay_lam_viec, ca=ca)
     if exclude_id:
         query = query.filter(Schedule.id != exclude_id)
     return query.first()
 
 
-# --------------------------------------------------------------------------
-# DASHBOARD
-# --------------------------------------------------------------------------
+def get_ai_suggested_employee_ids(task, ca="Sáng", limit=None):
+    if not task:
+        return []
+    query = Employee.query
+    if task.bo_phan:
+        query = query.filter(Employee.bo_phan == task.bo_phan)
+    employees = query.all()
+    task_date = task.ngay_gio.date() if task.ngay_gio else None
+    scored = []
+    for emp in employees:
+        score = 0
+        if emp.trinh_do == "Chuyên gia":
+            score += 40
+        elif emp.trinh_do == "Thành thạo":
+            score += 30
+        elif emp.trinh_do == "Khá":
+            score += 20
+        elif emp.trinh_do == "Cơ bản":
+            score += 10
+
+        available = True
+        if task_date:
+            existing = check_trung_ca(emp.id, task_date, ca)
+            if existing:
+                available = False
+                score -= 100
+
+        total_assigned = Schedule.query.filter_by(employee_id=emp.id).count()
+        score -= total_assigned * 2
+
+        scored.append({"id": emp.id, "score": score, "available": available})
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    suggested = [item["id"] for item in scored if item["available"]]
+    if limit:
+        suggested = suggested[:limit]
+    else:
+        suggested = suggested[: task.so_luong_nv]
+    return suggested
+
+
+def assign_task_ai(task, ca="Sáng"):
+    if not task or not task.ngay_gio:
+        return [], ["Công việc thiếu ngày hoặc không tồn tại."]
+    requested_ca = ca if ca in ["Sáng", "Chiều"] else "Sáng"
+    suggested_ids = get_ai_suggested_employee_ids(task, ca=requested_ca, limit=task.so_luong_nv)
+    if not suggested_ids:
+        return [], ["Không tìm thấy nhân viên phù hợp để phân công."]
+
+    assigned = []
+    errors = []
+    for eid in suggested_ids:
+        if check_trung_ca(eid, task.ngay_gio.date(), ca):
+            emp = Employee.query.get(eid)
+            errors.append(f"Nhân viên '{emp.ho_ten}' đã có lịch ca {ca}.")
+            continue
+        db.session.add(Schedule(employee_id=eid, task_id=task.id, ngay_lam_viec=task.ngay_gio.date(), ca=ca))
+        assigned.append(eid)
+    return assigned, errors
+
+
+DO_UU_TIEN_COLORS = {
+    "Khẩn cấp": "#ef4444",
+    "Cao": "#f59e0b",
+    "Trung bình": "#3b82f6",
+    "Thấp": "#94a3b8",
+}
+
+DO_UU_TIEN_BG = {
+    "Khẩn cấp": "rgba(239,68,68,0.18)",
+    "Cao": "rgba(245,158,11,0.18)",
+    "Trung bình": "rgba(59,130,246,0.18)",
+    "Thấp": "rgba(148,163,184,0.18)",
+}
+
+TRINH_DO_ORDER = {"Cơ bản": 1, "Khá": 2, "Thành thạo": 3, "Chuyên gia": 4}
+
+
 @app.route("/")
-def dashboard():
-    today = date.today()
+def index():
+    return redirect(url_for("lich_trinh"))
 
-    tong_nhan_vien = Employee.query.count()
-    tong_cong_viec = Task.query.count()
-    tong_lich_phan_cong = Schedule.query.count()
 
-    lich_hom_nay = (
-        Schedule.query.filter(Schedule.ngay_lam_viec == today)
-        .order_by(Schedule.ca)
-        .all()
-    )
-    nhan_vien_hom_nay = len({s.employee_id for s in lich_hom_nay})
-
-    # tuần hiện tại cho preview lịch trên dashboard
-    week_start = get_week_start(today)
+@app.route("/lich-trinh")
+def lich_trinh():
+    start_param = request.args.get("start")
+    if start_param:
+        anchor = parse_date(start_param)
+    else:
+        anchor = date.today()
+    week_start = get_week_start(anchor)
     week_dates = [week_start + timedelta(days=i) for i in range(6)]
-    employees = Employee.query.order_by(Employee.ho_ten).all()
-    tasks = Task.query.order_by(Task.ten_cv).all()
 
-    weekly_grid = build_weekly_grid(week_dates, employees)
-
-    cong_viec_hom_nay = (
-        db.session.query(Schedule, Employee, Task)
-        .join(Employee, Schedule.employee_id == Employee.id)
+    schedules = (
+        db.session.query(Schedule, Task)
         .join(Task, Schedule.task_id == Task.id)
-        .filter(Schedule.ngay_lam_viec == today)
-        .order_by(Schedule.ca)
-        .limit(6)
+        .filter(Schedule.ngay_lam_viec.in_(week_dates), Task.completed == False)
+        .order_by(Schedule.ngay_lam_viec, Schedule.ca)
         .all()
     )
+    timetable = {}
+    for s, task in schedules:
+        key = (s.ngay_lam_viec, s.ca)
+        if key not in timetable:
+            timetable[key] = {}
+        timetable[key][task.id] = task
+
+    seen = set()
+    week_tasks = []
+    for s, task in schedules:
+        if task.id not in seen:
+            seen.add(task.id)
+            week_tasks.append({"task": task, "date": s.ngay_lam_viec, "ca": s.ca})
+
+    prev_week = week_start - timedelta(days=7)
+    next_week = week_start + timedelta(days=7)
+    total_employees = Employee.query.count()
 
     return render_template(
-        "dashboard.html",
-        tong_nhan_vien=tong_nhan_vien,
-        tong_cong_viec=tong_cong_viec,
-        tong_lich_phan_cong=tong_lich_phan_cong,
-        nhan_vien_hom_nay=nhan_vien_hom_nay,
+        "lich_trinh.html",
         week_start=week_start,
         week_dates=week_dates,
         thu_list=THU_TRONG_TUAN,
-        employees=employees,
-        tasks=tasks,
-        weekly_grid=weekly_grid,
-        cong_viec_hom_nay=cong_viec_hom_nay,
-        today=today,
-        now=datetime.now(),
+        timetable=timetable,
+        week_tasks=week_tasks,
+        prev_week=prev_week.strftime("%Y-%m-%d"),
+        next_week=next_week.strftime("%Y-%m-%d"),
+        today_str=date.today().strftime("%Y-%m-%d"),
+        total_employees=total_employees,
+        do_uu_tien_colors=DO_UU_TIEN_COLORS,
+        do_uu_tien_bg=DO_UU_TIEN_BG,
     )
 
 
-def build_weekly_grid(week_dates, employees):
-    """Tạo dữ liệu dạng {employee_id: {date: {'Sáng': Schedule|None, 'Chiều': Schedule|None}}}"""
-    grid = {}
-    schedules = (
-        Schedule.query.filter(
-            Schedule.ngay_lam_viec.in_(week_dates)
-        ).all()
-    )
-    lookup = {}
-    for s in schedules:
-        lookup.setdefault(s.employee_id, {}).setdefault(s.ngay_lam_viec, {})[s.ca] = s
-
-    for emp in employees:
-        grid[emp.id] = {}
-        for d in week_dates:
-            entry = lookup.get(emp.id, {}).get(d, {})
-            grid[emp.id][d] = {
-                "Sáng": entry.get("Sáng"),
-                "Chiều": entry.get("Chiều"),
-            }
-    return grid
-
-
-# --------------------------------------------------------------------------
-# QUẢN LÝ NHÂN VIÊN
-# --------------------------------------------------------------------------
 @app.route("/employees")
 def employees_page():
     q = request.args.get("q", "").strip()
@@ -246,58 +379,70 @@ def employees_page():
                 Employee.ho_ten.ilike(like),
                 Employee.email.ilike(like),
                 Employee.bo_phan.ilike(like),
-                Employee.chuc_vu.ilike(like),
+                Employee.vi_tri.ilike(like),
+                Employee.trinh_do.ilike(like),
             )
         )
     employees = query.order_by(Employee.id.desc()).all()
-    return render_template("employees.html", employees=employees, q=q)
+    return render_template("employees.html", employees=employees, q=q, vi_tri_map=VI_TRI_MAP, trinh_do_list=TRINH_DO_LIST)
 
 
 @app.route("/employees/add", methods=["POST"])
 def employee_add():
-    ma_nv = request.form.get("ma_nv", "").strip()
-    ho_ten = request.form.get("ho_ten", "").strip()
-    email = request.form.get("email", "").strip()
-    sdt = request.form.get("sdt", "").strip()
-    bo_phan = request.form.get("bo_phan", "").strip()
-    chuc_vu = request.form.get("chuc_vu", "").strip()
-
-    if not ma_nv or not ho_ten:
-        flash("Mã nhân viên và Họ tên là bắt buộc.", "danger")
+    payload = {
+        "ma_nv": normalize_text(request.form.get("ma_nv")),
+        "ho_ten": normalize_text(request.form.get("ho_ten")),
+        "email": normalize_text(request.form.get("email")),
+        "bo_phan": normalize_text(request.form.get("bo_phan")),
+        "vi_tri": normalize_text(request.form.get("vi_tri")),
+        "trinh_do": normalize_text(request.form.get("trinh_do")) or "Cơ bản",
+    }
+    errors = validate_employee_payload(payload)
+    if errors:
+        flash("; ".join(errors), "danger")
         return redirect(url_for("employees_page"))
-
-    if Employee.query.filter_by(ma_nv=ma_nv).first():
-        flash(f"Mã nhân viên '{ma_nv}' đã tồn tại.", "danger")
+    if Employee.query.filter_by(ma_nv=payload["ma_nv"]).first():
+        flash(f"Mã nhân viên '{payload['ma_nv']}' đã tồn tại.", "danger")
         return redirect(url_for("employees_page"))
-
     emp = Employee(
-        ma_nv=ma_nv, ho_ten=ho_ten, email=email, sdt=sdt,
-        bo_phan=bo_phan, chuc_vu=chuc_vu
+        ma_nv=payload["ma_nv"],
+        ho_ten=payload["ho_ten"],
+        email=payload["email"],
+        bo_phan=payload["bo_phan"],
+        vi_tri=payload["vi_tri"],
+        trinh_do=payload["trinh_do"],
     )
     db.session.add(emp)
     db.session.commit()
-    flash(f"Đã thêm nhân viên '{ho_ten}' thành công.", "success")
+    flash(f"Đã thêm nhân viên '{payload['ho_ten']}' thành công.", "success")
     return redirect(url_for("employees_page"))
 
 
 @app.route("/employees/edit/<int:emp_id>", methods=["POST"])
 def employee_edit(emp_id):
     emp = Employee.query.get_or_404(emp_id)
-    ma_nv = request.form.get("ma_nv", "").strip()
-
-    trung = Employee.query.filter(
-        Employee.ma_nv == ma_nv, Employee.id != emp_id
-    ).first()
-    if trung:
-        flash(f"Mã nhân viên '{ma_nv}' đã được sử dụng bởi nhân viên khác.", "danger")
+    payload = {
+        "ma_nv": normalize_text(request.form.get("ma_nv")),
+        "ho_ten": normalize_text(request.form.get("ho_ten")),
+        "email": normalize_text(request.form.get("email")),
+        "bo_phan": normalize_text(request.form.get("bo_phan")),
+        "vi_tri": normalize_text(request.form.get("vi_tri")),
+        "trinh_do": normalize_text(request.form.get("trinh_do")) or "Cơ bản",
+    }
+    errors = validate_employee_payload(payload)
+    if errors:
+        flash("; ".join(errors), "danger")
         return redirect(url_for("employees_page"))
-
-    emp.ma_nv = ma_nv
-    emp.ho_ten = request.form.get("ho_ten", "").strip()
-    emp.email = request.form.get("email", "").strip()
-    emp.sdt = request.form.get("sdt", "").strip()
-    emp.bo_phan = request.form.get("bo_phan", "").strip()
-    emp.chuc_vu = request.form.get("chuc_vu", "").strip()
+    trung = Employee.query.filter(Employee.ma_nv == payload["ma_nv"], Employee.id != emp_id).first()
+    if trung:
+        flash(f"Mã nhân viên '{payload['ma_nv']}' đã được sử dụng.", "danger")
+        return redirect(url_for("employees_page"))
+    emp.ma_nv = payload["ma_nv"]
+    emp.ho_ten = payload["ho_ten"]
+    emp.email = payload["email"]
+    emp.bo_phan = payload["bo_phan"]
+    emp.vi_tri = payload["vi_tri"]
+    emp.trinh_do = payload["trinh_do"]
     db.session.commit()
     flash("Đã cập nhật thông tin nhân viên.", "success")
     return redirect(url_for("employees_page"))
@@ -312,72 +457,153 @@ def employee_delete(emp_id):
     return redirect(url_for("employees_page"))
 
 
-# --------------------------------------------------------------------------
-# QUẢN LÝ CÔNG VIỆC
-# --------------------------------------------------------------------------
 @app.route("/tasks")
 def tasks_page():
     q = request.args.get("q", "").strip()
-    query = Task.query
+    detail_id = request.args.get("detail", type=int)
+    task_id = request.args.get("task_id", type=int)
+    auto = request.args.get("auto") == "1"
+
+    query = Task.query.filter_by(completed=False)
     if q:
         like = f"%{q}%"
-        query = query.filter(
-            or_(Task.ma_cv.ilike(like), Task.ten_cv.ilike(like), Task.mo_ta.ilike(like))
-        )
+        query = query.filter(or_(Task.ma_cv.ilike(like), Task.ten_cv.ilike(like), Task.ghi_chu.ilike(like)))
     tasks = query.order_by(Task.id.desc()).all()
-    return render_template("tasks.html", tasks=tasks, q=q, do_uu_tien_list=DO_UU_TIEN_LIST)
+
+    detail_task = None
+    detail_assignments = []
+    if detail_id:
+        detail_task = Task.query.get(detail_id)
+        if detail_task:
+            detail_assignments = (
+                db.session.query(Schedule, Employee)
+                .join(Employee, Schedule.employee_id == Employee.id)
+                .filter(Schedule.task_id == detail_id)
+                .order_by(Schedule.ngay_lam_viec, Schedule.ca)
+                .all()
+            )
+
+    suggested_task = None
+    suggested_employees = []
+    suggested_ids = []
+    if task_id and auto:
+        suggested_task = Task.query.get(task_id)
+        if suggested_task:
+            suggested_ids = get_ai_suggested_employee_ids(suggested_task, ca="Sáng", limit=suggested_task.so_luong_nv)
+            if suggested_ids:
+                suggested_employees = Employee.query.filter(Employee.id.in_(suggested_ids)).all()
+                suggested_employees.sort(key=lambda emp: suggested_ids.index(emp.id))
+
+    return render_template(
+        "tasks.html", tasks=tasks, q=q, do_uu_tien_list=DO_UU_TIEN_LIST,
+        vi_tri_map=VI_TRI_MAP, trinh_do_list=TRINH_DO_LIST,
+        do_uu_tien_colors=DO_UU_TIEN_COLORS, do_uu_tien_bg=DO_UU_TIEN_BG,
+        detail_task=detail_task, detail_assignments=detail_assignments,
+        suggested_task=suggested_task, suggested_employees=suggested_employees, suggested_ids=[str(i) for i in suggested_ids]
+    )
 
 
 @app.route("/tasks/add", methods=["POST"])
 def task_add():
-    ma_cv = request.form.get("ma_cv", "").strip()
-    ten_cv = request.form.get("ten_cv", "").strip()
-    mo_ta = request.form.get("mo_ta", "").strip()
-    do_uu_tien = request.form.get("do_uu_tien", "Trung bình")
-    thoi_luong = request.form.get("thoi_luong", "1")
-
-    if not ma_cv or not ten_cv:
-        flash("Mã công việc và Tên công việc là bắt buộc.", "danger")
+    payload = {
+        "ma_cv": normalize_text(request.form.get("ma_cv")),
+        "ten_cv": normalize_text(request.form.get("ten_cv")),
+        "ghi_chu": normalize_text(request.form.get("ghi_chu")),
+        "do_uu_tien": normalize_text(request.form.get("do_uu_tien")) or "Trung bình",
+        "ngay_gio": normalize_text(request.form.get("ngay_gio")),
+        "bo_phan": normalize_text(request.form.get("bo_phan")),
+        "so_luong_nv": request.form.get("so_luong_nv", "1"),
+        "thoi_luong": request.form.get("thoi_luong", "1"),
+        "ca_requirement": normalize_text(request.form.get("ca_requirement")) or "Sáng",
+    }
+    errors = validate_task_payload(payload)
+    if errors:
+        flash("; ".join(errors), "danger")
         return redirect(url_for("tasks_page"))
-
-    if Task.query.filter_by(ma_cv=ma_cv).first():
-        flash(f"Mã công việc '{ma_cv}' đã tồn tại.", "danger")
+    if Task.query.filter_by(ma_cv=payload["ma_cv"]).first():
+        flash(f"Mã công việc '{payload['ma_cv']}' đã tồn tại.", "danger")
         return redirect(url_for("tasks_page"))
-
-    try:
-        thoi_luong_f = float(thoi_luong)
-    except ValueError:
-        thoi_luong_f = 1.0
-
+    ngay_gio = parse_date_value(payload["ngay_gio"])
+    if ngay_gio is None:
+        flash("Ngày công việc không đúng định dạng.", "danger")
+        return redirect(url_for("tasks_page"))
     task = Task(
-        ma_cv=ma_cv, ten_cv=ten_cv, mo_ta=mo_ta,
-        do_uu_tien=do_uu_tien, thoi_luong=thoi_luong_f
+        ma_cv=payload["ma_cv"],
+        ten_cv=payload["ten_cv"],
+        ghi_chu=payload["ghi_chu"],
+        do_uu_tien=payload["do_uu_tien"],
+        ngay_gio=datetime.combine(ngay_gio, datetime.min.time()),
+        bo_phan=payload["bo_phan"],
+        so_luong_nv=int(payload["so_luong_nv"]),
+        thoi_luong=float(payload["thoi_luong"]),
+        ca_requirement=payload["ca_requirement"],
     )
     db.session.add(task)
     db.session.commit()
-    flash(f"Đã thêm công việc '{ten_cv}' thành công.", "success")
+    touch_last_update()
+    flash(f"Đã thêm công việc '{payload['ten_cv']}' thành công.", "success")
     return redirect(url_for("tasks_page"))
 
 
 @app.route("/tasks/edit/<int:task_id>", methods=["POST"])
 def task_edit(task_id):
     task = Task.query.get_or_404(task_id)
-    ma_cv = request.form.get("ma_cv", "").strip()
-
-    trung = Task.query.filter(Task.ma_cv == ma_cv, Task.id != task_id).first()
-    if trung:
-        flash(f"Mã công việc '{ma_cv}' đã được sử dụng.", "danger")
+    payload = {
+        "ma_cv": normalize_text(request.form.get("ma_cv")),
+        "ten_cv": normalize_text(request.form.get("ten_cv")),
+        "ghi_chu": normalize_text(request.form.get("ghi_chu")),
+        "do_uu_tien": normalize_text(request.form.get("do_uu_tien")) or "Trung bình",
+        "ngay_gio": normalize_text(request.form.get("ngay_gio")),
+        "bo_phan": normalize_text(request.form.get("bo_phan")),
+        "so_luong_nv": request.form.get("so_luong_nv", "1"),
+        "thoi_luong": request.form.get("thoi_luong", "1"),
+        "ca_requirement": normalize_text(request.form.get("ca_requirement")) or "Sáng",
+    }
+    errors = validate_task_payload(payload)
+    if errors:
+        flash("; ".join(errors), "danger")
         return redirect(url_for("tasks_page"))
+    trung = Task.query.filter(Task.ma_cv == payload["ma_cv"], Task.id != task_id).first()
+    if trung:
+        flash(f"Mã công việc '{payload['ma_cv']}' đã được sử dụng.", "danger")
+        return redirect(url_for("tasks_page"))
+    task.ma_cv = payload["ma_cv"]
+    task.ten_cv = payload["ten_cv"]
+    task.ghi_chu = payload["ghi_chu"]
+    task.do_uu_tien = payload["do_uu_tien"]
+    ngay_gio = parse_date_value(payload["ngay_gio"])
+    if ngay_gio is None:
+        flash("Ngày công việc không đúng định dạng.", "danger")
+        return redirect(url_for("tasks_page"))
+    task.ngay_gio = datetime.combine(ngay_gio, datetime.min.time())
+    task.bo_phan = payload["bo_phan"]
+    task.so_luong_nv = int(payload["so_luong_nv"])
+    task.thoi_luong = float(payload["thoi_luong"])
+    old_ca = task.ca_requirement
+    new_ca = payload["ca_requirement"]
+    task.ca_requirement = new_ca
+    task.updated_at = datetime.utcnow()
 
-    task.ma_cv = ma_cv
-    task.ten_cv = request.form.get("ten_cv", "").strip()
-    task.mo_ta = request.form.get("mo_ta", "").strip()
-    task.do_uu_tien = request.form.get("do_uu_tien", "Trung bình")
-    try:
-        task.thoi_luong = float(request.form.get("thoi_luong", "1"))
-    except ValueError:
-        task.thoi_luong = 1.0
+    if old_ca != new_ca:
+        conflicts = []
+        for sch in task.schedules:
+            if sch.ca != new_ca:
+                existing = Schedule.query.filter(
+                    Schedule.employee_id == sch.employee_id,
+                    Schedule.ngay_lam_viec == sch.ngay_lam_viec,
+                    Schedule.ca == new_ca,
+                    Schedule.id != sch.id,
+                ).first()
+                if existing:
+                    employee = Employee.query.get(sch.employee_id)
+                    conflicts.append(f"{employee.ho_ten} ({employee.ma_nv})")
+                else:
+                    sch.ca = new_ca
+        if conflicts:
+            flash("Không thể cập nhật ca cho một số nhân viên do trùng ca: " + ", ".join(conflicts), "warning")
+
     db.session.commit()
+    touch_last_update()
     flash("Đã cập nhật công việc.", "success")
     return redirect(url_for("tasks_page"))
 
@@ -387,73 +613,251 @@ def task_delete(task_id):
     task = Task.query.get_or_404(task_id)
     db.session.delete(task)
     db.session.commit()
+    touch_last_update()
     flash(f"Đã xóa công việc '{task.ten_cv}'.", "success")
     return redirect(url_for("tasks_page"))
 
 
-# --------------------------------------------------------------------------
-# PHÂN CÔNG CÔNG VIỆC
-# --------------------------------------------------------------------------
-@app.route("/schedule/assign")
-def assign_page():
-    employees = Employee.query.order_by(Employee.ho_ten).all()
-    tasks = Task.query.order_by(Task.ten_cv).all()
+@app.route("/tasks/complete/<int:task_id>", methods=["POST"])
+def task_complete(task_id):
+    task = Task.query.get_or_404(task_id)
+    task.completed = True
+    task.completed_at = datetime.utcnow()
+    task.updated_at = datetime.utcnow()
+    db.session.commit()
+    touch_last_update()
+    flash(f"Đã đánh dấu công việc '{task.ten_cv}' hoàn thành.", "success")
+    return redirect(url_for("tasks_page"))
 
-    today = date.today()
+
+@app.route("/tasks/history")
+def task_history():
+    q = request.args.get("q", "").strip()
+    detail_id = request.args.get("detail", type=int)
+    query = Task.query.filter_by(completed=True)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(Task.ma_cv.ilike(like), Task.ten_cv.ilike(like), Task.ghi_chu.ilike(like)))
+    tasks = query.order_by(Task.completed_at.desc()).all()
+    detail_task = None
+    detail_assignments = []
+    if detail_id:
+        detail_task = Task.query.get(detail_id)
+        if detail_task:
+            detail_assignments = (
+                db.session.query(Schedule, Employee)
+                .join(Employee, Schedule.employee_id == Employee.id)
+                .filter(Schedule.task_id == detail_id)
+                .order_by(Schedule.ngay_lam_viec, Schedule.ca)
+                .all()
+            )
+    return render_template(
+        "task_history.html", tasks=tasks, q=q, do_uu_tien_list=DO_UU_TIEN_LIST,
+        vi_tri_map=VI_TRI_MAP, trinh_do_list=TRINH_DO_LIST,
+        do_uu_tien_colors=DO_UU_TIEN_COLORS, do_uu_tien_bg=DO_UU_TIEN_BG,
+        detail_task=detail_task, detail_assignments=detail_assignments
+    )
+
+
+@app.route("/tasks/assign")
+def task_assign():
+    tasks = Task.query.filter_by(completed=False).order_by(Task.id.desc()).all()
     recent = (
         db.session.query(Schedule, Employee, Task)
         .join(Employee, Schedule.employee_id == Employee.id)
         .join(Task, Schedule.task_id == Task.id)
         .order_by(Schedule.id.desc())
-        .limit(15)
+        .limit(20)
         .all()
     )
+    assign_mode = "auto" if request.args.get("auto") == "1" else "manual"
     return render_template(
-        "schedule_assign.html",
-        employees=employees,
+        "task_assign.html",
         tasks=tasks,
         recent=recent,
-        today=today.strftime("%Y-%m-%d"),
+        assign_mode=assign_mode,
+        today_str=date.today().strftime("%Y-%m-%d"),
+        do_uu_tien_colors=DO_UU_TIEN_COLORS,
+        do_uu_tien_bg=DO_UU_TIEN_BG,
+        trinh_do_list=TRINH_DO_LIST,
+        vi_tri_map=VI_TRI_MAP,
     )
 
+@app.route("/tasks/assign/get-employees", methods=["POST"])
+def assign_get_employees():
+    data = request.get_json()
+    task_id = data.get("task_id")
+    vi_tri_filter = data.get("vi_tri", "")
+    trinh_do_filter = data.get("trinh_do", "")
+    ca = data.get("ca", "Sáng")
+    task = Task.query.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
 
-@app.route("/schedule/assign", methods=["POST"])
-def assign_submit():
-    employee_id = request.form.get("employee_id")
-    task_id = request.form.get("task_id")
-    ngay_str = request.form.get("ngay_lam_viec")
-    ca = request.form.get("ca")
-    ghi_chu = request.form.get("ghi_chu", "").strip()
+    query = Employee.query
+    if task.bo_phan:
+        query = query.filter(Employee.bo_phan == task.bo_phan)
+    if vi_tri_filter:
+        query = query.filter(Employee.vi_tri == vi_tri_filter)
+    if trinh_do_filter:
+        query = query.filter(Employee.trinh_do == trinh_do_filter)
 
-    if not employee_id or not task_id or not ngay_str or not ca:
-        flash("Vui lòng chọn đầy đủ Nhân viên, Công việc, Ngày và Ca làm việc.", "danger")
-        return redirect(url_for("assign_page"))
+    employees = query.all()
 
-    ngay = parse_date(ngay_str)
+    result = []
+    task_date = task.ngay_gio.date() if task.ngay_gio else None
+    for emp in employees:
+        available = True
+        msg = ""
+        if task_date:
+            existing = check_trung_ca(emp.id, task_date, ca)
+            if existing:
+                available = False
+                msg = f"Đã có lịch '{existing.task.ten_cv}' ca {ca}"
+        result.append({
+            "id": emp.id,
+            "ma_nv": emp.ma_nv,
+            "ho_ten": emp.ho_ten,
+            "email": emp.email,
+            "bo_phan": emp.bo_phan,
+            "vi_tri": emp.vi_tri,
+            "trinh_do": emp.trinh_do,
+            "available": available,
+            "msg": msg,
+        })
+    return jsonify(result)
 
-    # KIỂM TRA TRÙNG CA / TRÙNG LỊCH (yêu cầu bắt buộc 4.3)
-    trung = check_trung_ca(int(employee_id), ngay, ca)
-    if trung:
-        emp = Employee.query.get(employee_id)
-        flash(
-            f"LỖI: Nhân viên '{emp.ho_ten if emp else employee_id}' đã có lịch làm việc "
-            f"trong ca '{ca}' ngày {ngay.strftime('%d/%m/%Y')}. "
-            f"Không thể phân công trùng ca!",
-            "danger",
-        )
-        return redirect(url_for("assign_page"))
 
-    schedule = Schedule(
-        employee_id=int(employee_id),
-        task_id=int(task_id),
-        ngay_lam_viec=ngay,
-        ca=ca,
-        ghi_chu=ghi_chu,
-    )
-    db.session.add(schedule)
+@app.route("/tasks/assign/ai-suggest", methods=["POST"])
+def assign_ai_suggest():
+    data = request.get_json()
+    task_id = data.get("task_id")
+    vi_tri_filter = data.get("vi_tri", "")
+    trinh_do_filter = data.get("trinh_do", "")
+    ca = data.get("ca", "Sáng")
+    task = Task.query.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    query = Employee.query
+    if task.bo_phan:
+        query = query.filter(Employee.bo_phan == task.bo_phan)
+    if vi_tri_filter:
+        query = query.filter(Employee.vi_tri == vi_tri_filter)
+    if trinh_do_filter:
+        query = query.filter(Employee.trinh_do == trinh_do_filter)
+    employees = query.all()
+
+    task_date = task.ngay_gio.date() if task.ngay_gio else None
+    scored = []
+    for emp in employees:
+        score = 0
+        if emp.trinh_do == "Chuyên gia":
+            score += 40
+        elif emp.trinh_do == "Thành thạo":
+            score += 30
+        elif emp.trinh_do == "Khá":
+            score += 20
+        elif emp.trinh_do == "Cơ bản":
+            score += 10
+
+        available = True
+        if task_date:
+            existing = check_trung_ca(emp.id, task_date, ca)
+            if existing:
+                available = False
+                score -= 100
+
+        total_assigned = Schedule.query.filter_by(employee_id=emp.id).count()
+        score -= total_assigned * 2
+
+        scored.append({
+            "id": emp.id,
+            "ma_nv": emp.ma_nv,
+            "ho_ten": emp.ho_ten,
+            "bo_phan": emp.bo_phan,
+            "vi_tri": emp.vi_tri,
+            "trinh_do": emp.trinh_do,
+            "score": max(score, 0) if available else 0,
+            "available": available,
+            "recommended": available and score > 20,
+        })
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return jsonify(scored[:task.so_luong_nv * 3])
+
+
+@app.route("/tasks/assign/save", methods=["POST"])
+def assign_save():
+    data = request.get_json()
+    task_id = data.get("task_id")
+    employee_ids = data.get("employee_ids", [])
+    ca = data.get("ca", "Sáng")
+    task = Task.query.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    if not task.ngay_gio:
+        return jsonify({"error": "Task has no date set"}), 400
+
+    ngay = task.ngay_gio.date()
+    assigned = []
+    errors = []
+    if len(employee_ids) > task.so_luong_nv:
+        return jsonify({"error": f"Không được chọn quá {task.so_luong_nv} nhân viên."}), 400
+
+    for eid in employee_ids:
+        trung = check_trung_ca(eid, ngay, ca)
+        if trung:
+            emp = Employee.query.get(eid)
+            errors.append(f"Nhân viên '{emp.ho_ten}' đã có lịch ca {ca}")
+            continue
+        sch = Schedule(employee_id=eid, task_id=task_id, ngay_lam_viec=ngay, ca=ca)
+        db.session.add(sch)
+        assigned.append(eid)
     db.session.commit()
-    flash("Phân công công việc thành công!", "success")
-    return redirect(url_for("assign_page"))
+    touch_last_update()
+    return jsonify({"assigned": len(assigned), "errors": errors})
+
+
+@app.route("/tasks/assign/auto-all", methods=["POST"])
+def auto_assign_all_tasks():
+    tasks = Task.query.filter_by(completed=False).all()
+    total_assigned = 0
+
+    for task in tasks:
+        if not task.ngay_gio:
+            continue
+        task_ca = task.ca_requirement if task.ca_requirement in ["Sáng", "Chiều"] else "Sáng"
+        assigned, _ = assign_task_ai(task, ca=task_ca)
+        total_assigned += len(assigned)
+
+    db.session.commit()
+    touch_last_update()
+    if total_assigned:
+        flash(f"AI đã tự động phân công {total_assigned} ca cho các công việc hợp lệ.", "success")
+    else:
+        flash("AI không thể phân công thêm ca nào. Vui lòng kiểm tra điều kiện công việc và nhân viên.", "warning")
+    return redirect(url_for("tasks_page"))
+
+
+@app.route('/api/last-update')
+def api_last_update():
+    update_file = os.path.join(BASE_DIR, ".last_update")
+    if not os.path.exists(update_file):
+        touch_last_update()
+    mtime = datetime.utcfromtimestamp(os.path.getmtime(update_file))
+    return jsonify({"last_update": mtime.isoformat()})
+
+
+@app.route("/download-template/<string:template_type>")
+def download_template(template_type):
+    if template_type == "employees":
+        filename = "employees_sample.xlsx"
+    elif template_type == "tasks":
+        filename = "tasks_sample.xlsx"
+    else:
+        return "Template không tồn tại", 404
+    return send_from_directory(BASE_DIR, filename, as_attachment=True)
 
 
 @app.route("/schedule/delete/<int:sch_id>", methods=["POST"])
@@ -461,11 +865,34 @@ def schedule_delete(sch_id):
     sch = Schedule.query.get_or_404(sch_id)
     db.session.delete(sch)
     db.session.commit()
+    touch_last_update()
     flash("Đã xóa lịch phân công.", "success")
-    return redirect(request.referrer or url_for("assign_page"))
+    return redirect(request.referrer or url_for("lich_trinh"))
 
 
-# API kiểm tra trùng ca theo thời gian thực (dùng cho JS phía client)
+@app.route("/reports")
+def reports_page():
+    employees = Employee.query.order_by(Employee.ho_ten).all()
+    stats = []
+    for emp in employees:
+        count = Schedule.query.filter_by(employee_id=emp.id).count()
+        total_hours = (
+            db.session.query(db.func.sum(Task.thoi_luong))
+            .join(Schedule, Schedule.task_id == Task.id)
+            .filter(Schedule.employee_id == emp.id)
+            .scalar() or 0
+        )
+        stats.append({"employee": emp, "so_luong_ca": count, "tong_gio": round(total_hours, 1)})
+    stats.sort(key=lambda x: x["so_luong_ca"], reverse=True)
+    tong_lich = Schedule.query.count()
+    tong_nv_co_lich = db.session.query(Schedule.employee_id).distinct().count()
+    bo_phan_stats = {}
+    for emp in employees:
+        bp = emp.bo_phan or "Chưa phân loại"
+        bo_phan_stats[bp] = bo_phan_stats.get(bp, 0) + Schedule.query.filter_by(employee_id=emp.id).count()
+    return render_template("reports.html", stats=stats, tong_lich=tong_lich, tong_nv_co_lich=tong_nv_co_lich, bo_phan_stats=bo_phan_stats)
+
+
 @app.route("/api/check_conflict")
 def api_check_conflict():
     employee_id = request.args.get("employee_id", type=int)
@@ -476,108 +903,12 @@ def api_check_conflict():
     ngay = parse_date(ngay_str)
     trung = check_trung_ca(employee_id, ngay, ca)
     if trung:
-        return jsonify({
-            "conflict": True,
-            "task_name": trung.task.ten_cv,
-        })
+        return jsonify({"conflict": True, "task_name": trung.task.ten_cv})
     return jsonify({"conflict": False})
 
 
-# --------------------------------------------------------------------------
-# LỊCH LÀM VIỆC THEO TUẦN
-# --------------------------------------------------------------------------
-@app.route("/schedule/week")
-def week_page():
-    start_param = request.args.get("start")
-    if start_param:
-        anchor = parse_date(start_param)
-    else:
-        anchor = date.today()
-    week_start = get_week_start(anchor)
-    week_dates = [week_start + timedelta(days=i) for i in range(6)]
-
-    employees = Employee.query.order_by(Employee.ho_ten).all()
-    weekly_grid = build_weekly_grid(week_dates, employees)
-
-    prev_week = week_start - timedelta(days=7)
-    next_week = week_start + timedelta(days=7)
-
-    view = request.args.get("view", "grid")  # grid | list
-
-    list_items = []
-    if view == "list":
-        list_items = (
-            db.session.query(Schedule, Employee, Task)
-            .join(Employee, Schedule.employee_id == Employee.id)
-            .join(Task, Schedule.task_id == Task.id)
-            .filter(Schedule.ngay_lam_viec.in_(week_dates))
-            .order_by(Schedule.ngay_lam_viec, Schedule.ca)
-            .all()
-        )
-
-    return render_template(
-        "weekly_schedule.html",
-        week_start=week_start,
-        week_dates=week_dates,
-        thu_list=THU_TRONG_TUAN,
-        employees=employees,
-        weekly_grid=weekly_grid,
-        prev_week=prev_week.strftime("%Y-%m-%d"),
-        next_week=next_week.strftime("%Y-%m-%d"),
-        today_str=date.today().strftime("%Y-%m-%d"),
-        view=view,
-        list_items=list_items,
-    )
-
-
-# --------------------------------------------------------------------------
-# BÁO CÁO / THỐNG KÊ
-# --------------------------------------------------------------------------
-@app.route("/reports")
-def reports_page():
-    # Thống kê khối lượng công việc theo từng nhân viên
-    employees = Employee.query.order_by(Employee.ho_ten).all()
-    stats = []
-    for emp in employees:
-        count = Schedule.query.filter_by(employee_id=emp.id).count()
-        total_hours = (
-            db.session.query(db.func.sum(Task.thoi_luong))
-            .join(Schedule, Schedule.task_id == Task.id)
-            .filter(Schedule.employee_id == emp.id)
-            .scalar()
-            or 0
-        )
-        stats.append({
-            "employee": emp,
-            "so_luong_ca": count,
-            "tong_gio": round(total_hours, 1),
-        })
-    stats.sort(key=lambda x: x["so_luong_ca"], reverse=True)
-
-    tong_lich = Schedule.query.count()
-    tong_nv_co_lich = db.session.query(Schedule.employee_id).distinct().count()
-
-    # Thống kê theo bộ phận
-    bo_phan_stats = {}
-    for emp in employees:
-        bp = emp.bo_phan or "Chưa phân loại"
-        bo_phan_stats[bp] = bo_phan_stats.get(bp, 0) + Schedule.query.filter_by(employee_id=emp.id).count()
-
-    return render_template(
-        "reports.html",
-        stats=stats,
-        tong_lich=tong_lich,
-        tong_nv_co_lich=tong_nv_co_lich,
-        bo_phan_stats=bo_phan_stats,
-    )
-
-
-# --------------------------------------------------------------------------
-# DYNAMIC ROUTING (ĐƯỜNG DẪN ĐỘNG)
-# --------------------------------------------------------------------------
 @app.route("/p/<path:slug>")
 def dynamic_page(slug):
-    """Trang hiển thị nội dung động từ Database theo đường dẫn (slug)"""
     page = Page.query.filter_by(slug=slug).first()
     if not page:
         return "Trang không tồn tại (404)", 404
@@ -586,80 +917,176 @@ def dynamic_page(slug):
 
 @app.route("/pages/add", methods=["POST"])
 def page_add():
-    """Tạo đường dẫn động mới và lưu vào cơ sở dữ liệu"""
     slug = request.form.get("slug", "").strip()
     tieu_de = request.form.get("tieu_de", "").strip()
     noi_dung = request.form.get("noi_dung", "").strip()
-
     if not slug or not tieu_de:
         flash("Slug và Tiêu đề là bắt buộc.", "danger")
-        return redirect(url_for("dashboard"))
-
+        return redirect(url_for("lich_trinh"))
     if Page.query.filter_by(slug=slug).first():
         flash(f"Đường dẫn '/p/{slug}' đã tồn tại!", "danger")
-        return redirect(url_for("dashboard"))
-
+        return redirect(url_for("lich_trinh"))
     new_page = Page(slug=slug, tieu_de=tieu_de, noi_dung=noi_dung)
     db.session.add(new_page)
     db.session.commit()
-
     flash(f"Đã tạo đường dẫn mới: /p/{slug}", "success")
     return redirect(url_for("dynamic_page", slug=slug))
 
 
-# --------------------------------------------------------------------------
-# KHỞI TẠO DATABASE + DỮ LIỆU MẪU
-# --------------------------------------------------------------------------
+@app.route("/import-data", methods=["GET", "POST"])
+def import_data_page():
+    imported_count = 0
+    skipped_count = 0
+    summary = []
+    if request.method == "POST":
+        import_type = request.form.get("import_type", "employees")
+        uploaded_file = request.files.get("file")
+        raw_data = request.form.get("raw_data", "").strip()
+
+        if not uploaded_file and not raw_data:
+            flash("Vui lòng chọn tập tin hoặc dán dữ liệu để nhập.", "danger")
+            return redirect(url_for("import_data_page"))
+
+        rows = []
+        if uploaded_file and uploaded_file.filename:
+            filename = uploaded_file.filename.lower()
+            content = uploaded_file.read()
+            if filename.endswith(".csv"):
+                text = content.decode("utf-8-sig")
+                rows = list(csv.DictReader(io.StringIO(text)))
+            elif filename.endswith(".xlsx"):
+                try:
+                    from openpyxl import load_workbook
+                except ImportError:
+                    flash("Cần cài đặt thư viện openpyxl để đọc file .xlsx.", "danger")
+                    return redirect(url_for("import_data_page"))
+                workbook = load_workbook(io.BytesIO(content), data_only=True)
+                sheet = workbook.active
+                raw_rows = list(sheet.iter_rows(values_only=True))
+                if not raw_rows:
+                    flash("Tập tin không chứa dữ liệu.", "danger")
+                    return redirect(url_for("import_data_page"))
+                headers = [normalize_text(h) for h in raw_rows[0]]
+                for row in raw_rows[1:]:
+                    if not any(v is not None and normalize_text(v) for v in row):
+                        continue
+                    record = {}
+                    for index, header in enumerate(headers):
+                        value = row[index] if index < len(row) else ""
+                        record[header] = value
+                    rows.append(record)
+            else:
+                flash("Chỉ hỗ trợ file .csv hoặc .xlsx.", "danger")
+                return redirect(url_for("import_data_page"))
+        elif raw_data:
+            reader = csv.DictReader(io.StringIO(raw_data))
+            if not reader.fieldnames or all(not normalize_text(fn) for fn in reader.fieldnames):
+                flash("Dữ liệu CSV dán vào cần có hàng tiêu đề hợp lệ (ví dụ: ma_nv, ho_ten, bo_phan).", "danger")
+                return redirect(url_for("import_data_page"))
+            rows = [row for row in reader if any(normalize_text(v) for v in row.values())]
+
+        if not rows:
+            flash("Không tìm thấy dữ liệu hợp lệ trong file hoặc đoạn văn bản đã nhập.", "danger")
+            return redirect(url_for("import_data_page"))
+
+        if import_type == "employees":
+            for row in rows:
+                payload = {
+                    "ma_nv": normalize_text(row.get("ma_nv") or row.get("Mã nhân viên") or row.get("maNV") or row.get("id")),
+                    "ho_ten": normalize_text(row.get("ho_ten") or row.get("Họ tên") or row.get("hoTen") or row.get("name")),
+                    "email": normalize_text(row.get("email") or row.get("Email") or row.get("mail")),
+                    "bo_phan": normalize_text(row.get("bo_phan") or row.get("Bộ phận") or row.get("department")),
+                    "vi_tri": normalize_text(row.get("vi_tri") or row.get("Vị trí") or row.get("position")),
+                    "trinh_do": normalize_text(row.get("trinh_do") or row.get("Trình độ") or row.get("level")) or "Cơ bản",
+                }
+                errors = validate_employee_payload(payload)
+                if errors:
+                    skipped_count += 1
+                    summary.append({"row": row, "errors": errors})
+                    continue
+                if Employee.query.filter_by(ma_nv=payload["ma_nv"]).first():
+                    skipped_count += 1
+                    summary.append({"row": row, "errors": [f"Mã nhân viên '{payload['ma_nv']}' đã tồn tại."]})
+                    continue
+                employee = Employee(**payload)
+                db.session.add(employee)
+                imported_count += 1
+            db.session.commit()
+            flash(f"Đã nhập {imported_count} nhân viên mới, bỏ qua {skipped_count} dòng không hợp lệ.", "success")
+        else:
+            for row in rows:
+                payload = {
+                    "ma_cv": normalize_text(row.get("ma_cv") or row.get("Mã công việc") or row.get("maCV") or row.get("id")),
+                    "ten_cv": normalize_text(row.get("ten_cv") or row.get("Tên công việc") or row.get("tenCV") or row.get("title")),
+                    "ghi_chu": normalize_text(row.get("ghi_chu") or row.get("Ghi chú") or row.get("note") or row.get("description")),
+                    "do_uu_tien": normalize_text(row.get("do_uu_tien") or row.get("Độ ưu tiên") or row.get("priority")) or "Trung bình",
+                    "ngay_gio": normalize_text(row.get("ngay_gio") or row.get("Ngày") or row.get("date") or row.get("ngay")),
+                    "bo_phan": normalize_text(row.get("bo_phan") or row.get("Bộ phận") or row.get("department")),
+                    "so_luong_nv": normalize_text(row.get("so_luong_nv") or row.get("Số lượng NV") or row.get("quantity") or "1"),
+                    "thoi_luong": normalize_text(row.get("thoi_luong") or row.get("Thời lượng") or row.get("duration") or "1"),
+                }
+                errors = validate_task_payload(payload)
+                if errors:
+                    skipped_count += 1
+                    summary.append({"row": row, "errors": errors})
+                    continue
+                if Task.query.filter_by(ma_cv=payload["ma_cv"]).first():
+                    skipped_count += 1
+                    summary.append({"row": row, "errors": [f"Mã công việc '{payload['ma_cv']}' đã tồn tại."]})
+                    continue
+                ngay_gio = parse_date_value(payload["ngay_gio"])
+                if ngay_gio is None:
+                    skipped_count += 1
+                    summary.append({"row": row, "errors": ["Ngày công việc không đúng định dạng."]})
+                    continue
+                task = Task(
+                    ma_cv=payload["ma_cv"],
+                    ten_cv=payload["ten_cv"],
+                    ghi_chu=payload["ghi_chu"],
+                    do_uu_tien=payload["do_uu_tien"],
+                    ngay_gio=datetime.combine(ngay_gio, datetime.min.time()),
+                    bo_phan=payload["bo_phan"],
+                    so_luong_nv=int(payload["so_luong_nv"]),
+                    thoi_luong=float(payload["thoi_luong"]),
+                )
+                db.session.add(task)
+                imported_count += 1
+            db.session.commit()
+            flash(f"Đã nhập {imported_count} công việc mới, bỏ qua {skipped_count} dòng không hợp lệ.", "success")
+        return render_template("import_data.html", import_type=import_type, imported_count=imported_count, skipped_count=skipped_count, summary=summary)
+
+    return render_template("import_data.html", import_type="employees", imported_count=0, skipped_count=0, summary=[])
+
+
 def seed_data():
-    if Employee.query.count() > 0:
+    pass
+
+
+def ensure_task_schema():
+    db_path = os.path.join(BASE_DIR, "scheduler.db")
+    if not os.path.exists(db_path):
         return
 
-    demo_employees = [
-        Employee(ma_nv="NV001", ho_ten="Nguyễn Văn A", email="nguyenvana@company.com", sdt="0901000001", bo_phan="Kỹ thuật", chuc_vu="Nhân viên kỹ thuật"),
-        Employee(ma_nv="NV002", ho_ten="Trần Thị B", email="tranthib@company.com", sdt="0901000002", bo_phan="Kinh doanh", chuc_vu="Nhân viên kinh doanh"),
-        Employee(ma_nv="NV003", ho_ten="Lê Văn C", email="levanc@company.com", sdt="0901000003", bo_phan="Kế toán", chuc_vu="Kế toán viên"),
-        Employee(ma_nv="NV004", ho_ten="Phạm Thị D", email="phamthid@company.com", sdt="0901000004", bo_phan="Hành chính", chuc_vu="Nhân viên hành chính"),
-        Employee(ma_nv="NV005", ho_ten="Hoàng Văn E", email="hoangvane@company.com", sdt="0901000005", bo_phan="IT Support", chuc_vu="Nhân viên IT"),
-    ]
-    db.session.add_all(demo_employees)
+    with db.engine.connect() as conn:
+        result = conn.execute(text("PRAGMA table_info(task)"))
+        columns = [row[1] for row in result]
+        if "ca_requirement" not in columns:
+            conn.execute(text("ALTER TABLE task ADD COLUMN ca_requirement VARCHAR(20) DEFAULT 'Sáng'"))
+        if "updated_at" not in columns:
+            conn.execute(text("ALTER TABLE task ADD COLUMN updated_at DATETIME"))
+            conn.execute(text("UPDATE task SET updated_at = created_at WHERE updated_at IS NULL"))
 
-    demo_tasks = [
-        Task(ma_cv="CV001", ten_cv="Kiểm tra thiết bị", mo_ta="Kiểm tra tình trạng thiết bị định kỳ", do_uu_tien="Cao", thoi_luong=4),
-        Task(ma_cv="CV002", ten_cv="Sửa chữa", mo_ta="Sửa chữa thiết bị hỏng", do_uu_tien="Cao", thoi_luong=4),
-        Task(ma_cv="CV003", ten_cv="Bảo trì máy móc", mo_ta="Bảo trì định kỳ máy móc", do_uu_tien="Trung bình", thoi_luong=4),
-        Task(ma_cv="CV004", ten_cv="Tư vấn KH", mo_ta="Tư vấn khách hàng", do_uu_tien="Trung bình", thoi_luong=4),
-        Task(ma_cv="CV005", ten_cv="Chăm sóc KH", mo_ta="Chăm sóc khách hàng sau bán", do_uu_tien="Trung bình", thoi_luong=4),
-        Task(ma_cv="CV006", ten_cv="Nhập liệu", mo_ta="Nhập liệu dữ liệu kế toán", do_uu_tien="Thấp", thoi_luong=4),
-        Task(ma_cv="CV007", ten_cv="Đối chiếu", mo_ta="Đối chiếu số liệu sổ sách", do_uu_tien="Trung bình", thoi_luong=4),
-        Task(ma_cv="CV008", ten_cv="Văn thư", mo_ta="Công tác văn thư lưu trữ", do_uu_tien="Thấp", thoi_luong=4),
-        Task(ma_cv="CV009", ten_cv="Hỗ trợ IT", mo_ta="Hỗ trợ kỹ thuật IT cho nhân viên", do_uu_tien="Cao", thoi_luong=4),
-        Task(ma_cv="CV010", ten_cv="Backup dữ liệu", mo_ta="Sao lưu dữ liệu hệ thống", do_uu_tien="Khẩn cấp", thoi_luong=2),
-    ]
-    db.session.add_all(demo_tasks)
-    db.session.commit()
-
-    today = date.today()
-    monday = get_week_start(today)
-    pairs = [
-        (0, 0, 0, "Sáng"), (0, 0, 2, "Chiều"),
-        (1, 1, 3, "Sáng"), (1, 1, 4, "Chiều"),
-        (2, 2, 5, "Sáng"), (2, 2, 6, "Chiều"),
-    ]
-    for emp_idx, day_idx, task_idx, ca in pairs:
-        sch = Schedule(
-            employee_id=demo_employees[emp_idx].id,
-            task_id=demo_tasks[task_idx].id,
-            ngay_lam_viec=monday + timedelta(days=day_idx),
-            ca=ca,
-        )
-        db.session.add(sch)
-    db.session.commit()
+        result = conn.execute(text("PRAGMA table_info(schedule)"))
+        schedule_columns = [row[1] for row in result]
+        if "updated_at" not in schedule_columns:
+            conn.execute(text("ALTER TABLE schedule ADD COLUMN updated_at DATETIME"))
+            conn.execute(text("UPDATE schedule SET updated_at = created_at WHERE updated_at IS NULL"))
+        conn.execute(text("UPDATE task SET ca_requirement='Sáng' WHERE ca_requirement NOT IN ('Sáng','Chiều') OR ca_requirement IS NULL"))
 
 
 with app.app_context():
+    ensure_task_schema()
     db.create_all()
-    seed_data()
-
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

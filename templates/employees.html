@@ -1,4 +1,4 @@
-{% extends "dynamic_page.html" %}
+{% extends "base.html" %}
 {% block title %}Nhân viên - Employee Task Scheduler{% endblock %}
 {% block page_title %}Quản lý nhân viên{% endblock %}
 
@@ -9,16 +9,21 @@
       <input type="text" name="q" class="form-control" placeholder="Tìm theo mã, tên, email, bộ phận..." value="{{ q }}" style="width:280px;">
       <button class="btn btn-outline-secondary"><i class="bi bi-search"></i></button>
     </form>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addEmployeeModal">
-      <i class="bi bi-plus-lg"></i> Thêm nhân viên
-    </button>
+    <div class="d-flex" style="gap:8px;">
+      <a class="btn btn-outline-secondary" href="{{ url_for('import_data_page') }}">
+        <i class="bi bi-cloud-arrow-up"></i> Nhập hàng loạt
+      </a>
+      <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addEmployeeModal">
+        <i class="bi bi-plus-lg"></i> Thêm nhân viên
+      </button>
+    </div>
   </div>
 
   <div class="table-responsive">
     <table class="table-generic">
       <thead>
         <tr>
-          <th>Mã NV</th><th>Họ tên</th><th>Email</th><th>SĐT</th><th>Bộ phận</th><th>Chức vụ</th><th style="text-align:right">Thao tác</th>
+          <th>Mã NV</th><th>Họ tên</th><th>Email</th><th>Bộ phận</th><th>Vị trí</th><th>Trình độ</th><th style="text-align:right">Thao tác</th>
         </tr>
       </thead>
       <tbody>
@@ -27,18 +32,22 @@
           <td><span class="chip chip-blue">{{ e.ma_nv }}</span></td>
           <td><strong>{{ e.ho_ten }}</strong></td>
           <td>{{ e.email or '-' }}</td>
-          <td>{{ e.sdt or '-' }}</td>
           <td>{{ e.bo_phan or '-' }}</td>
-          <td>{{ e.chuc_vu or '-' }}</td>
+          <td>{{ e.vi_tri or '-' }}</td>
+          <td>
+            {% if e.trinh_do == 'Chuyên gia' %}<span class="chip chip-red">{{ e.trinh_do }}</span>
+            {% elif e.trinh_do == 'Thành thạo' %}<span class="chip chip-orange">{{ e.trinh_do }}</span>
+            {% elif e.trinh_do == 'Khá' %}<span class="chip chip-green">{{ e.trinh_do }}</span>
+            {% else %}<span class="chip chip-gray">{{ e.trinh_do }}</span>{% endif %}
+          </td>
           <td style="text-align:right">
             <button class="action-btn" data-bs-toggle="modal" data-bs-target="#editEmployeeModal{{ e.id }}"><i class="bi bi-pencil"></i></button>
-            <form method="POST" action="{{ url_for('employee_delete', emp_id=e.id) }}" class="d-inline" onsubmit="return confirm('Xóa nhân viên {{ e.ho_ten }}? Toàn bộ lịch phân công liên quan cũng sẽ bị xóa.');">
+            <form method="POST" action="{{ url_for('employee_delete', emp_id=e.id) }}" class="d-inline" onsubmit="return confirm('Xoa nhan vien {{ e.ho_ten }}?');">
               <button class="action-btn danger" type="submit"><i class="bi bi-trash"></i></button>
             </form>
           </td>
         </tr>
 
-        <!-- Modal sửa -->
         <div class="modal fade" id="editEmployeeModal{{ e.id }}" tabindex="-1">
           <div class="modal-dialog">
             <div class="modal-content">
@@ -47,10 +56,32 @@
                 <div class="modal-body">
                   <div class="mb-2"><label class="form-label">Mã nhân viên</label><input class="form-control" name="ma_nv" value="{{ e.ma_nv }}" required></div>
                   <div class="mb-2"><label class="form-label">Họ tên</label><input class="form-control" name="ho_ten" value="{{ e.ho_ten }}" required></div>
-                  <div class="mb-2"><label class="form-label">Email</label><input class="form-control" name="email" value="{{ e.email or '' }}"></div>
-                  <div class="mb-2"><label class="form-label">Số điện thoại</label><input class="form-control" name="sdt" value="{{ e.sdt or '' }}"></div>
-                  <div class="mb-2"><label class="form-label">Bộ phận</label><input class="form-control" name="bo_phan" value="{{ e.bo_phan or '' }}"></div>
-                  <div class="mb-2"><label class="form-label">Chức vụ</label><input class="form-control" name="chuc_vu" value="{{ e.chuc_vu or '' }}"></div>
+                  <div class="mb-2"><label class="form-label">Email</label><input class="form-control" name="email" type="email" value="{{ e.email or '' }}" required></div>
+                  <div class="mb-2"><label class="form-label">Bộ phận</label>
+                    <select class="form-select edit-bo-phan" name="bo_phan" data-target="{{ e.id }}" required>
+                      <option value="">-- Chọn bộ phận --</option>
+                      {% for bp in vi_tri_map.keys() %}
+                      <option value="{{ bp }}" {{ 'selected' if e.bo_phan==bp }}>{{ bp }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="mb-2"><label class="form-label">Vị trí</label>
+                    <select class="form-select edit-vi-tri" name="vi_tri" id="edit_vi_tri_{{ e.id }}" required>
+                      <option value="">-- Chọn vị trí --</option>
+                      {% if e.bo_phan and e.bo_phan in vi_tri_map %}
+                        {% for vt in vi_tri_map[e.bo_phan] %}
+                        <option value="{{ vt }}" {{ 'selected' if e.vi_tri==vt }}>{{ vt }}</option>
+                        {% endfor %}
+                      {% endif %}
+                    </select>
+                  </div>
+                  <div class="mb-2"><label class="form-label">Trình độ</label>
+                    <select class="form-select" name="trinh_do" required>
+                      {% for td in trinh_do_list %}
+                      <option value="{{ td }}" {{ 'selected' if e.trinh_do==td }}>{{ td }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
                 </div>
                 <div class="modal-footer">
                   <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
@@ -68,19 +99,35 @@
   </div>
 </div>
 
-<!-- Modal thêm -->
 <div class="modal fade" id="addEmployeeModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
       <form method="POST" action="{{ url_for('employee_add') }}">
         <div class="modal-header"><h5 class="modal-title">Thêm nhân viên</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
-          <div class="mb-2"><label class="form-label">Mã nhân viên</label><input class="form-control" name="ma_nv" placeholder="VD: NV006" required></div>
+          <div class="mb-2"><label class="form-label">Mã nhân viên</label><input class="form-control" name="ma_nv" placeholder="VD: NV008" required></div>
           <div class="mb-2"><label class="form-label">Họ tên</label><input class="form-control" name="ho_ten" required></div>
-          <div class="mb-2"><label class="form-label">Email</label><input class="form-control" name="email" type="email"></div>
-          <div class="mb-2"><label class="form-label">Số điện thoại</label><input class="form-control" name="sdt"></div>
-          <div class="mb-2"><label class="form-label">Bộ phận</label><input class="form-control" name="bo_phan"></div>
-          <div class="mb-2"><label class="form-label">Chức vụ</label><input class="form-control" name="chuc_vu"></div>
+          <div class="mb-2"><label class="form-label">Email</label><input class="form-control" name="email" type="email" required></div>
+          <div class="mb-2"><label class="form-label">Bộ phận</label>
+            <select class="form-select" id="add_bo_phan" name="bo_phan" required>
+              <option value="">-- Chọn bộ phận --</option>
+              {% for bp in vi_tri_map.keys() %}
+              <option value="{{ bp }}">{{ bp }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2"><label class="form-label">Vị trí</label>
+            <select class="form-select" id="add_vi_tri" name="vi_tri" required>
+              <option value="">-- Chọn bộ phận trước --</option>
+            </select>
+          </div>
+          <div class="mb-2"><label class="form-label">Trình độ</label>
+            <select class="form-select" name="trinh_do" required>
+              {% for td in trinh_do_list %}
+              <option value="{{ td }}" {{ 'selected' if td=='Cơ bản' }}>{{ td }}</option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
@@ -90,4 +137,39 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const VI_TRI_MAP = {{ vi_tri_map | tojson }};
+
+function updateViTri(boPhanSelect, viTriSelect) {
+  const bp = boPhanSelect.value;
+  viTriSelect.innerHTML = '<option value="">-- Chọn vị trí --</option>';
+  if (bp && VI_TRI_MAP[bp]) {
+    VI_TRI_MAP[bp].forEach(function(vt) {
+      const opt = document.createElement('option');
+      opt.value = vt;
+      opt.textContent = vt;
+      viTriSelect.appendChild(opt);
+    });
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const addBoPhan = document.getElementById('add_bo_phan');
+  const addViTri = document.getElementById('add_vi_tri');
+  if (addBoPhan && addViTri) {
+    addBoPhan.addEventListener('change', function() { updateViTri(addBoPhan, addViTri); });
+  }
+
+  document.querySelectorAll('.edit-bo-phan').forEach(function(sel) {
+    sel.addEventListener('change', function() {
+      const targetId = this.getAttribute('data-target');
+      const viTriSelect = document.getElementById('edit_vi_tri_' + targetId);
+      if (viTriSelect) updateViTri(this, viTriSelect);
+    });
+  });
+});
+</script>
 {% endblock %}

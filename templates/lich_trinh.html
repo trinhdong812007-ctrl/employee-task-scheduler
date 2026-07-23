@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Lịch trình - Employee Task Scheduler{% endblock %}
+{% block page_title %}Lịch trình công việc{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="week-toolbar">
+    <div class="week-nav">
+      <a href="{{ url_for('lich_trinh', start=prev_week) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-left"></i></a>
+      <a href="{{ url_for('lich_trinh') }}" class="btn btn-sm btn-outline-secondary">Tuần này</a>
+      <a href="{{ url_for('lich_trinh', start=next_week) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-right"></i></a>
+      <span class="week-range">{{ week_dates[0].strftime('%d/%m/%Y') }} - {{ week_dates[-1].strftime('%d/%m/%Y') }}</span>
+    </div>
+    <div>
+      <a href="{{ url_for('tasks_page') }}" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg"></i> Thêm công việc</a>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table-week">
+      <thead>
+        <tr>
+          <th style="min-width:70px">Ca</th>
+          {% for d in week_dates %}
+            <th class="{{ 'text-primary' if d.strftime('%Y-%m-%d')==today_str }}">
+              {{ thu_list[loop.index0] }}<br><span style="font-weight:500;color:#9aa4b2">{{ d.strftime('%d/%m') }}</span>
+            </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="font-weight:700;text-align:center;vertical-align:middle;background:var(--gray-bg);color:var(--blue);font-size:13px">Sáng</td>
+          {% for d in week_dates %}
+            <td>
+              {% set tasks = timetable.get((d, 'Sáng'), {}) %}
+              {% for tid, task in tasks.items() %}
+                <a href="{{ url_for('tasks_page', detail=task.id) }}" class="cell-slot slot-sang" title="{{ task.ten_cv }} ({{ task.do_uu_tien }})" style="background:{{ do_uu_tien_bg.get(task.do_uu_tien, 'rgba(59,130,246,0.18)') }};color:{{ do_uu_tien_colors.get(task.do_uu_tien, '#60a5fa') }};text-decoration:none">
+                  {{ task.ten_cv }}
+                </a>
+              {% else %}
+                <div class="cell-slot slot-empty">-</div>
+              {% endfor %}
+            </td>
+          {% endfor %}
+        </tr>
+        <tr>
+          <td style="font-weight:700;text-align:center;vertical-align:middle;background:var(--gray-bg);color:var(--green);font-size:13px">Chiều</td>
+          {% for d in week_dates %}
+            <td>
+              {% set tasks = timetable.get((d, 'Chiều'), {}) %}
+              {% for tid, task in tasks.items() %}
+                <a href="{{ url_for('tasks_page', detail=task.id) }}" class="cell-slot slot-chieu" title="{{ task.ten_cv }} ({{ task.do_uu_tien }})" style="background:{{ do_uu_tien_bg.get(task.do_uu_tien, 'rgba(16,185,129,0.18)') }};color:{{ do_uu_tien_colors.get(task.do_uu_tien, '#34d399') }};text-decoration:none">
+                  {{ task.ten_cv }}
+                </a>
+              {% else %}
+                <div class="cell-slot slot-empty">-</div>
+              {% endfor %}
+            </td>
+          {% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="legend">
+    <span><span class="legend-dot" style="background:rgba(239,68,68,0.18);border:2px solid #ef4444"></span>Khẩn cấp</span>
+    <span><span class="legend-dot" style="background:rgba(245,158,11,0.18);border:2px solid #f59e0b"></span>Cao</span>
+    <span><span class="legend-dot" style="background:rgba(59,130,246,0.18);border:2px solid #3b82f6"></span>Trung bình</span>
+    <span><span class="legend-dot" style="background:rgba(107,114,128,0.18);border:2px solid #6b7280"></span>Thấp</span>
+    <span class="ms-3"><span class="legend-dot" style="background:var(--gray-bg)"></span>Không có lịch</span>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-8">
+    <div class="panel">
+      <div class="panel-title"><i class="bi bi-clock-history"></i> Công việc trong tuần</div>
+      <div class="table-responsive">
+        <table class="table-generic">
+          <thead>
+            <tr><th>Công việc</th><th>Bộ phận</th><th>Ngày</th><th>Ca</th><th>Ưu tiên</th><th>SL NV</th></tr>
+          </thead>
+          <tbody>
+            {% for wt in week_tasks %}
+            <tr>
+              <td><strong>{{ wt.task.ten_cv }}</strong></td>
+              <td>{{ wt.task.bo_phan or '-' }}</td>
+              <td>{{ wt.date.strftime('%d/%m/%Y') }}</td>
+              <td><span class="badge-ca {{ 'badge-sang' if wt.ca=='Sáng' else 'badge-chieu' }}">{{ wt.ca }}</span></td>
+              <td><span class="priority-tag" style="background:{{ do_uu_tien_bg.get(wt.task.do_uu_tien, 'rgba(59,130,246,0.18)') }};color:{{ do_uu_tien_colors.get(wt.task.do_uu_tien, '#3b82f6') }}">{{ wt.task.do_uu_tien }}</span></td>
+              <td>{{ wt.task.so_luong_nv }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">Chưa có công việc trong tuần này.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="panel">
+      <div class="panel-title"><i class="bi bi-info-circle"></i> Thông tin nhanh</div>
+      <div class="stat-card mini">
+        <div class="stat-label">Tổng nhân viên</div>
+        <div class="stat-value" style="font-size:24px">{{ total_employees }}</div>
+      </div>
+      <div class="stat-card mini mt-2">
+        <div class="stat-label">Tổng công việc trong tuần</div>
+        <div class="stat-value" style="font-size:24px">{{ week_tasks|length }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.stat-card.mini{ background:var(--panel-bg-soft); border-radius:12px; padding:14px; border:1px solid var(--border-color); }
+.priority-tag{ display:inline-block; padding:2px 10px; border-radius:12px; font-size:11.5px; font-weight:600; }
+</style>
+{% endblock %}
