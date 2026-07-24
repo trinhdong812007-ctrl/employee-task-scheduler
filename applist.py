@@ -322,7 +322,6 @@ TRINH_DO_ORDER = {"Cơ bản": 1, "Khá": 2, "Thành thạo": 3, "Chuyên gia": 
 def index():
     return redirect(url_for("lich_trinh"))
 
-
 @app.route("/lich-trinh")
 def lich_trinh():
     start_param = request.args.get("start")
@@ -333,26 +332,35 @@ def lich_trinh():
     week_start = get_week_start(anchor)
     week_dates = [week_start + timedelta(days=i) for i in range(6)]
 
-    schedules = (
-        db.session.query(Schedule, Task)
-        .join(Task, Schedule.task_id == Task.id)
-        .filter(Schedule.ngay_lam_viec.in_(week_dates), Task.completed == False)
-        .order_by(Schedule.ngay_lam_viec, Schedule.ca)
-        .all()
-    )
-    timetable = {}
-    for s, task in schedules:
-        key = (s.ngay_lam_viec, s.ca)
-        if key not in timetable:
-            timetable[key] = {}
-        timetable[key][task.id] = task
+    # 1. Lấy TẤT CẢ công việc trong tuần (kể cả chưa được phân công)
+    tasks_in_week = Task.query.filter(
+        Task.ngay_gio >= week_dates[0],
+        Task.ngay_gio <= week_dates[-1],
+        Task.completed == False
+    ).order_by(Task.ngay_gio, Task.ca_requirement).all()
 
-    seen = set()
+    # 2. Gom nhóm công việc theo (ngày, ca) dạng danh sách (List) để 1 ô chứa được NỀU công việc
+    timetable = {}
     week_tasks = []
-    for s, task in schedules:
-        if task.id not in seen:
-            seen.add(task.id)
-            week_tasks.append({"task": task, "date": s.ngay_lam_viec, "ca": s.ca})
+
+    for task in tasks_in_week:
+        # Lấy ngày (chỉ lấy phần date nếu ngay_gio là datetime)
+        task_date = task.ngay_gio.date() if hasattr(task.ngay_gio, 'date') else task.ngay_gio
+        ca = task.ca_requirement or 'Sáng'
+        key = (task_date, ca)
+
+        if key not in timetable:
+            timetable[key] = []
+        
+        # Thêm công việc vào danh sách của ô (ngày, ca) đó
+        timetable[key].append(task)
+
+        # Danh sách tổng hợp "Công việc trong tuần" bên dưới
+        week_tasks.append({
+            "task": task, 
+            "date": task_date, 
+            "ca": ca
+        })
 
     prev_week = week_start - timedelta(days=7)
     next_week = week_start + timedelta(days=7)
@@ -689,7 +697,21 @@ def task_assign():
         trinh_do_list=TRINH_DO_LIST,
         vi_tri_map=VI_TRI_MAP,
     )
-
+@app.route("/tasks/assign/delete/<int:schedule_id>", methods=["POST"])
+def delete_assignment_route(schedule_id):
+    sch = Schedule.query.get_or_404(schedule_id)
+    task_id = sch.task_id
+    
+    try:
+        db.session.delete(sch)
+        db.session.commit()
+        flash("Đã xóa phân công nhân viên thành công!", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash("Có lỗi xảy ra khi xóa!", "danger")
+        
+    # request.referrer giúp tự động quay về trang bạn vừa bấm nút Xóa
+    return redirect(request.referrer or url_for('tasks_page', detail=task_id))
 
 # --- ĐÃ SỬA: Lấy danh sách nhân viên chỉ phụ thuộc vào công việc ---
 @app.route("/tasks/assign/get-employees", methods=["POST"])

@@ -34,11 +34,10 @@
                         </select>
                     </div>
 
-                    <!-- 2. Khối hiển thị chi tiết thông tin công việc (Đã fix nổi bật màu chữ) -->
+                    <!-- 2. Khối hiển thị chi tiết thông tin công việc -->
                     <div id="taskDetailCard" class="card p-3 mb-3 border-secondary" style="display: none; background-color: #0d1117 !important; border-color: #30363d !important;">
                         <h5 id="taskDetailTitle" class="font-weight-bold mb-2" style="color: #f0f6fc !important;"></h5>
                         
-                        <!-- Dòng chữ phụ đã đổi màu sáng rõ hơn -->
                         <div id="taskDetailSub" class="mb-3" style="color: #94a3b8 !important; font-size: 0.9rem;"></div>
                         
                         <div class="d-flex align-items-center mb-2">
@@ -79,7 +78,7 @@
                 </div>
             </div>
 
-            <!-- Khối Phân công gần đây -->
+            <!-- Khối Phân công gần đây (ĐÃ SỬA: Bổ sung cột Thao tác & Nút Xóa) -->
             <div class="card bg-dark text-light border-secondary shadow" style="background-color: #161b22 !important;">
                 <div class="card-header border-secondary bg-transparent font-weight-bold text-light">
                     Phân công gần đây
@@ -93,6 +92,7 @@
                                     <th>Công việc</th>
                                     <th>Ngày làm</th>
                                     <th>Ca</th>
+                                    <th style="text-align: right;">Thao tác</th> <!-- 👈 Cột mới -->
                                 </tr>
                             </thead>
                             <tbody>
@@ -102,10 +102,19 @@
                                     <td style="color: #f0f6fc;">{{ task.ten_cv }}</td>
                                     <td style="color: #94a3b8;">{{ sch.ngay_lam_viec.strftime('%Y-%m-%d') }}</td>
                                     <td><span class="badge badge-secondary">{{ sch.ca }}</span></td>
+                                    
+                                    <!-- 👈 Nút xóa thùng rác -->
+                                    <td style="text-align: right;">
+                                        <form method="POST" action="{{ url_for('delete_assignment_route', schedule_id=sch.id) }}" class="d-inline" onsubmit="return confirm('Bạn có chắc muốn xóa phân công của {{ emp.ho_ten }} khỏi {{ task.ten_cv }}?');">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger border-0 py-0 px-2" title="Xóa phân công nhầm">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </td>
                                 </tr>
                                 {% else %}
                                 <tr>
-                                    <td colspan="4" class="text-center py-3" style="color: #94a3b8;">Chưa có lịch phân công nào.</td>
+                                    <td colspan="5" class="text-center py-3" style="color: #94a3b8;">Chưa có lịch phân công nào.</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -132,7 +141,6 @@ document.addEventListener("DOMContentLoaded", function() {
     const assignFooter = document.getElementById("assignFooter");
     const btnSave = document.getElementById("btnSaveAssign");
 
-    // Đã đồng bộ style màu sắc giống hệt danh sách Bảng Công Việc (Ảnh 2)
     const priorityStyles = {
         "Khẩn cấp": { bg: "rgba(239, 68, 68, 0.2)", color: "#ef4444" },
         "Cao": { bg: "rgba(245, 158, 11, 0.2)", color: "#f59e0b" },
@@ -213,7 +221,13 @@ document.addEventListener("DOMContentLoaded", function() {
                     <label class="list-group-item d-flex justify-content-between align-items-center py-2" style="background-color: transparent; border-color: #21262d; color: #f0f6fc;">
                         <div>
                             <input type="checkbox" class="emp-checkbox mr-2" value="${emp.id}" ${disabled}>
-                            <strong>${emp.ho_ten}</strong> <small style="color: #94a3b8;">(${emp.ma_nv}) - ${emp.vi_tri || ''}</small>
+                            <strong>${emp.ho_ten}</strong> 
+                            <small style="color: #94a3b8;">
+                                (${emp.ma_nv}) - ${emp.vi_tri || ''} 
+                                <span class="badge" style="background-color: #1e293b; color: #38bdf8; border: 1px solid #0369a1; font-weight: 500; font-size: 0.75rem; margin-left: 4px;">
+                                    ${emp.trinh_do || 'Cơ bản'}
+                                </span>
+                            </small>
                         </div>
                         <span class="badge" style="color: ${badgeColor}; font-weight: 500;">${statusText}</span>
                     </label>

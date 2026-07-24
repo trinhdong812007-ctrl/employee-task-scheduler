@@ -29,33 +29,50 @@
         </tr>
       </thead>
       <tbody>
+        <!-- CA SÁNG -->
         <tr>
           <td style="font-weight:700;text-align:center;vertical-align:middle;background:var(--gray-bg);color:var(--blue);font-size:13px">Sáng</td>
           {% for d in week_dates %}
-            <td>
-              {% set tasks = timetable.get((d, 'Sáng'), {}) %}
-              {% for tid, task in tasks.items() %}
-                <a href="{{ url_for('tasks_page', detail=task.id) }}" class="cell-slot slot-sang" title="{{ task.ten_cv }} ({{ task.do_uu_tien }})" style="background:{{ do_uu_tien_bg.get(task.do_uu_tien, 'rgba(59,130,246,0.18)') }};color:{{ do_uu_tien_colors.get(task.do_uu_tien, '#60a5fa') }};text-decoration:none">
-                  {{ task.ten_cv }}
-                </a>
+            <td style="vertical-align: top; padding: 6px;">
+              {% set tasks = timetable.get((d, 'Sáng'), []) %}
+              {% if tasks %}
+                <div class="d-flex flex-column gap-1">
+                  {% for task in tasks %}
+                    <a href="{{ url_for('tasks_page', detail=task.id) }}" 
+                       class="cell-slot slot-sang d-block mb-1" 
+                       title="{{ task.ten_cv }} ({{ task.do_uu_tien }})" 
+                       style="background:{{ do_uu_tien_bg.get(task.do_uu_tien, 'rgba(59,130,246,0.18)') }};color:{{ do_uu_tien_colors.get(task.do_uu_tien, '#60a5fa') }};text-decoration:none;">
+                      {{ task.ten_cv }}
+                    </a>
+                  {% endfor %}
+                </div>
               {% else %}
                 <div class="cell-slot slot-empty">-</div>
-              {% endfor %}
+              {% endif %}
             </td>
           {% endfor %}
         </tr>
+
+        <!-- CA CHIỀU -->
         <tr>
           <td style="font-weight:700;text-align:center;vertical-align:middle;background:var(--gray-bg);color:var(--green);font-size:13px">Chiều</td>
           {% for d in week_dates %}
-            <td>
-              {% set tasks = timetable.get((d, 'Chiều'), {}) %}
-              {% for tid, task in tasks.items() %}
-                <a href="{{ url_for('tasks_page', detail=task.id) }}" class="cell-slot slot-chieu" title="{{ task.ten_cv }} ({{ task.do_uu_tien }})" style="background:{{ do_uu_tien_bg.get(task.do_uu_tien, 'rgba(16,185,129,0.18)') }};color:{{ do_uu_tien_colors.get(task.do_uu_tien, '#34d399') }};text-decoration:none">
-                  {{ task.ten_cv }}
-                </a>
+            <td style="vertical-align: top; padding: 6px;">
+              {% set tasks = timetable.get((d, 'Chiều'), []) %}
+              {% if tasks %}
+                <div class="d-flex flex-column gap-1">
+                  {% for task in tasks %}
+                    <a href="{{ url_for('tasks_page', detail=task.id) }}" 
+                       class="cell-slot slot-chieu d-block mb-1" 
+                       title="{{ task.ten_cv }} ({{ task.do_uu_tien }})" 
+                       style="background:{{ do_uu_tien_bg.get(task.do_uu_tien, 'rgba(16,185,129,0.18)') }};color:{{ do_uu_tien_colors.get(task.do_uu_tien, '#34d399') }};text-decoration:none;">
+                      {{ task.ten_cv }}
+                    </a>
+                  {% endfor %}
+                </div>
               {% else %}
                 <div class="cell-slot slot-empty">-</div>
-              {% endfor %}
+              {% endif %}
             </td>
           {% endfor %}
         </tr>
@@ -117,5 +134,6 @@
 <style>
 .stat-card.mini{ background:var(--panel-bg-soft); border-radius:12px; padding:14px; border:1px solid var(--border-color); }
 .priority-tag{ display:inline-block; padding:2px 10px; border-radius:12px; font-size:11.5px; font-weight:600; }
+.cell-slot { display: block; margin-bottom: 4px; text-align: center; }
 </style>
 {% endblock %}

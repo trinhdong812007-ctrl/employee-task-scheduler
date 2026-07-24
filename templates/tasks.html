@@ -70,6 +70,7 @@
           </td>
         </tr>
 
+        <!-- Edit Modal -->
         <div class="modal fade" id="editTaskModal{{ t.id }}" tabindex="-1">
           <div class="modal-dialog">
             <div class="modal-content">
@@ -121,14 +122,14 @@
           </div>
         </div>
         {% else %}
-        <tr><td colspan="8" class="text-center text-muted py-4">Không có công việc nào.</td></tr>
+        <tr><td colspan="9" class="text-center text-muted py-4">Không có công việc nào.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
-
+<!-- Modal Chi Tiết Công Việc -->
 {% if detail_task %}
 <div class="modal fade" id="detailTaskModal" tabindex="-1" data-bs-backdrop="static">
   <div class="modal-dialog modal-lg">
@@ -208,7 +209,15 @@
         <div class="detail-label mb-2" style="font-size:15px;color:var(--text-main)"><i class="bi bi-people-fill"></i> Nhân viên được phân công</div>
         <table class="table-generic" style="font-size:13px">
           <thead>
-            <tr><th>Nhân viên</th><th>Mã NV</th><th>Vị trí</th><th>Ngày</th><th>Ca</th></tr>
+            <tr>
+              <th>Nhân viên</th>
+              <th>Mã NV</th>
+              <th>Vị trí</th>
+              <th>Trình độ</th>
+              <th>Ngày</th>
+              <th>Ca</th>
+              <th style="text-align:right">Thao tác</th>
+            </tr>
           </thead>
           <tbody>
             {% for s, emp in detail_assignments %}
@@ -216,8 +225,20 @@
               <td>{{ emp.ho_ten }}</td>
               <td><span class="chip chip-blue">{{ emp.ma_nv }}</span></td>
               <td>{{ emp.vi_tri or '-' }}</td>
+              <td>
+                <span class="chip" style="background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.3);">
+                  {{ emp.trinh_do or 'Cơ bản' }}
+                </span>
+              </td>
               <td>{{ s.ngay_lam_viec.strftime('%d/%m/%Y') }}</td>
               <td><span class="badge-ca {{ 'badge-sang' if s.ca=='Sáng' else 'badge-chieu' }}">{{ s.ca }}</span></td>
+              <td style="text-align:right">
+                <form method="POST" action="{{ url_for('delete_assignment_route', schedule_id=s.id) }}" class="d-inline" onsubmit="return confirm('Xóa phân công của {{ emp.ho_ten }} khỏi công việc này?');">
+                  <button type="submit" class="action-btn danger" title="Xóa phân công nhầm">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -235,6 +256,7 @@
 </div>
 {% endif %}
 
+<!-- Add Modal -->
 <div class="modal fade" id="addTaskModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
