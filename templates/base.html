@@ -9,6 +9,64 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/logo.svg') }}">
+
+<!-- 🎨 ĐOẠN CSS FIX TRIỆT ĐỂ LỖI CHỮ TRÙNG MÀU NỀN -->
+<style>
+  /* 1. Ép tất cả các thẻ văn bản thông thường về màu chữ trắng sáng */
+  body, p, span, div, li, a {
+      color: #f0f6fc !important;
+  }
+
+  /* 2. Sửa các thuộc tính nhãn (Label), văn bản phụ (Muted) thành màu xám xanh sáng */
+  .text-muted, small, .detail-label, .form-label, label, .card-subtitle {
+      color: #94a3b8 !important;
+  }
+
+  /* 3. Tiêu đề các cấp, Modal, Panel */
+  h1, h2, h3, h4, h5, h6, .page-title, .modal-title, .card-header, .panel-title {
+      color: #ffffff !important;
+  }
+
+  /* 4. Định dạng lại ô Input, Select, Textarea */
+  input.form-control, 
+  select.form-control, 
+  select.form-select, 
+  textarea.form-control {
+      background-color: #0d1117 !important;
+      color: #f0f6fc !important;
+      border-color: #30363d !important;
+  }
+
+  /* Sửa màu danh sách lựa chọn trong dropdown */
+  select.form-control option, 
+  select.form-select option {
+      background-color: #161b22 !important;
+      color: #f0f6fc !important;
+  }
+
+  /* 5. Fix bảng biểu (Tables) */
+  .table, .table-generic {
+      color: #f0f6fc !important;
+  }
+
+  .table th, .table-generic th {
+      color: #94a3b8 !important;
+      border-bottom: 1px solid #30363d !important;
+  }
+
+  .table td, .table-generic td {
+      color: #f0f6fc !important;
+      border-bottom: 1px solid #21262d !important;
+  }
+
+  /* 6. Fix các liên kết (Links) */
+  a:not(.btn):not(.nav-item) {
+      color: #58a6ff !important;
+  }
+  a:not(.btn):not(.nav-item):hover {
+      color: #79c0ff !important;
+  }
+</style>
 </head>
 <body>
 <div class="app-wrapper">

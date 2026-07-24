@@ -332,35 +332,44 @@ def lich_trinh():
     week_start = get_week_start(anchor)
     week_dates = [week_start + timedelta(days=i) for i in range(6)]
 
-    # 1. Lấy TẤT CẢ công việc trong tuần (kể cả chưa được phân công)
-    tasks_in_week = Task.query.filter(
-        Task.ngay_gio >= week_dates[0],
-        Task.ngay_gio <= week_dates[-1],
-        Task.completed == False
-    ).order_by(Task.ngay_gio, Task.ca_requirement).all()
+    # 1. TRUY VẤN CHỈ CÁC CÔNG VIỆC ĐÃ ĐƯỢC PHÂN CÔNG TRONG BẢNG SCHEDULE
+    assigned_schedules = (
+        db.session.query(Schedule, Task)
+        .join(Task, Schedule.task_id == Task.id)
+        .filter(
+            Schedule.ngay_lam_viec >= week_dates[0],
+            Schedule.ngay_lam_viec <= week_dates[-1],
+            Task.completed == False
+        )
+        .order_by(Schedule.ngay_lam_viec, Schedule.ca)
+        .all()
+    )
 
-    # 2. Gom nhóm công việc theo (ngày, ca) dạng danh sách (List) để 1 ô chứa được NỀU công việc
     timetable = {}
     week_tasks = []
+    seen_task_ids = set()
 
-    for task in tasks_in_week:
-        # Lấy ngày (chỉ lấy phần date nếu ngay_gio là datetime)
-        task_date = task.ngay_gio.date() if hasattr(task.ngay_gio, 'date') else task.ngay_gio
-        ca = task.ca_requirement or 'Sáng'
-        key = (task_date, ca)
+    # 2. GOM NHÓM DỮ LIỆU ĐÃ PHÂN CÔNG
+    for sch, task in assigned_schedules:
+        sch_date = sch.ngay_lam_viec
+        ca = sch.ca or task.ca_requirement or 'Sáng'
+        key = (sch_date, ca)
 
         if key not in timetable:
             timetable[key] = []
-        
-        # Thêm công việc vào danh sách của ô (ngày, ca) đó
-        timetable[key].append(task)
 
-        # Danh sách tổng hợp "Công việc trong tuần" bên dưới
-        week_tasks.append({
-            "task": task, 
-            "date": task_date, 
-            "ca": ca
-        })
+        # Đảm bảo 1 công việc chỉ thêm 1 lần vào ô (dù giao cho nhiều NV)
+        if task not in timetable[key]:
+            timetable[key].append(task)
+
+        # Lập danh sách công việc trong tuần (không trùng lặp)
+        if task.id not in seen_task_ids:
+            seen_task_ids.add(task.id)
+            week_tasks.append({
+                "task": task,
+                "date": sch_date,
+                "ca": ca
+            })
 
     prev_week = week_start - timedelta(days=7)
     next_week = week_start + timedelta(days=7)
@@ -380,7 +389,6 @@ def lich_trinh():
         do_uu_tien_colors=DO_UU_TIEN_COLORS,
         do_uu_tien_bg=DO_UU_TIEN_BG,
     )
-
 
 @app.route("/employees")
 def employees_page():
