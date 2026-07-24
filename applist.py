@@ -269,29 +269,34 @@ def get_ai_suggested_employee_ids(task, ca="Sáng", limit=None):
 
     scored.sort(key=lambda x: x["score"], reverse=True)
     suggested = [item["id"] for item in scored if item["available"]]
+    
+    # Kiểm tra số lượng đã phân công thực tế để tránh phân công thừa
+    current_assigned_count = Schedule.query.filter_by(task_id=task.id).count()
+    remaining_slots = max(0, task.so_luong_nv - current_assigned_count)
+
     if limit:
-        suggested = suggested[:limit]
+        suggested = suggested[:min(limit, remaining_slots)]
     else:
-        suggested = suggested[: task.so_luong_nv]
+        suggested = suggested[:remaining_slots]
     return suggested
 
 
 def assign_task_ai(task, ca="Sáng"):
     if not task or not task.ngay_gio:
         return [], ["Công việc thiếu ngày hoặc không tồn tại."]
-    requested_ca = ca if ca in ["Sáng", "Chiều"] else "Sáng"
-    suggested_ids = get_ai_suggested_employee_ids(task, ca=requested_ca, limit=task.so_luong_nv)
+    requested_ca = ca if ca in ["Sáng", "Chiều"] else task.ca_requirement or "Sáng"
+    suggested_ids = get_ai_suggested_employee_ids(task, ca=requested_ca)
     if not suggested_ids:
-        return [], ["Không tìm thấy nhân viên phù hợp để phân công."]
+        return [], ["Không tìm thấy nhân viên phù hợp hoặc đã đủ số lượng."]
 
     assigned = []
     errors = []
     for eid in suggested_ids:
-        if check_trung_ca(eid, task.ngay_gio.date(), ca):
+        if check_trung_ca(eid, task.ngay_gio.date(), requested_ca):
             emp = Employee.query.get(eid)
-            errors.append(f"Nhân viên '{emp.ho_ten}' đã có lịch ca {ca}.")
+            errors.append(f"Nhân viên '{emp.ho_ten}' đã có lịch ca {requested_ca}.")
             continue
-        db.session.add(Schedule(employee_id=eid, task_id=task.id, ngay_lam_viec=task.ngay_gio.date(), ca=ca))
+        db.session.add(Schedule(employee_id=eid, task_id=task.id, ngay_lam_viec=task.ngay_gio.date(), ca=requested_ca))
         assigned.append(eid)
     return assigned, errors
 
@@ -491,7 +496,7 @@ def tasks_page():
     if task_id and auto:
         suggested_task = Task.query.get(task_id)
         if suggested_task:
-            suggested_ids = get_ai_suggested_employee_ids(suggested_task, ca="Sáng", limit=suggested_task.so_luong_nv)
+            suggested_ids = get_ai_suggested_employee_ids(suggested_task, ca=suggested_task.ca_requirement or "Sáng")
             if suggested_ids:
                 suggested_employees = Employee.query.filter(Employee.id.in_(suggested_ids)).all()
                 suggested_employees.sort(key=lambda emp: suggested_ids.index(emp.id))
@@ -685,37 +690,37 @@ def task_assign():
         vi_tri_map=VI_TRI_MAP,
     )
 
+
+# --- ĐÃ SỬA: Lấy danh sách nhân viên chỉ phụ thuộc vào công việc ---
 @app.route("/tasks/assign/get-employees", methods=["POST"])
 def assign_get_employees():
     data = request.get_json()
     task_id = data.get("task_id")
-    vi_tri_filter = data.get("vi_tri", "")
-    trinh_do_filter = data.get("trinh_do", "")
-    ca = data.get("ca", "Sáng")
+    
     task = Task.query.get(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return jsonify({"error": "Công việc không tồn tại"}), 404
 
+    # Chỉ lọc nhân viên thuộc cùng bộ phận với công việc
     query = Employee.query
     if task.bo_phan:
         query = query.filter(Employee.bo_phan == task.bo_phan)
-    if vi_tri_filter:
-        query = query.filter(Employee.vi_tri == vi_tri_filter)
-    if trinh_do_filter:
-        query = query.filter(Employee.trinh_do == trinh_do_filter)
 
     employees = query.all()
 
-    result = []
+    # Tự động lấy ca quy định của công việc (mặc định 'Sáng')
+    task_ca = task.ca_requirement if task.ca_requirement in ["Sáng", "Chiều"] else "Sáng"
     task_date = task.ngay_gio.date() if task.ngay_gio else None
+
+    result = []
     for emp in employees:
         available = True
         msg = ""
         if task_date:
-            existing = check_trung_ca(emp.id, task_date, ca)
+            existing = check_trung_ca(emp.id, task_date, task_ca)
             if existing:
                 available = False
-                msg = f"Đã có lịch '{existing.task.ten_cv}' ca {ca}"
+                msg = f"Đã có lịch '{existing.task.ten_cv}' ca {task_ca}"
         result.append({
             "id": emp.id,
             "ma_nv": emp.ma_nv,
@@ -727,27 +732,32 @@ def assign_get_employees():
             "available": available,
             "msg": msg,
         })
-    return jsonify(result)
+
+    # Đếm số nhân viên đã được phân công thực tế
+    assigned_count = Schedule.query.filter_by(task_id=task.id).count()
+
+    return jsonify({
+        "employees": result,
+        "max_nv": task.so_luong_nv,
+        "assigned_count": assigned_count,
+        "remaining_slots": max(0, task.so_luong_nv - assigned_count),
+        "ca": task_ca
+    })
 
 
 @app.route("/tasks/assign/ai-suggest", methods=["POST"])
 def assign_ai_suggest():
     data = request.get_json()
     task_id = data.get("task_id")
-    vi_tri_filter = data.get("vi_tri", "")
-    trinh_do_filter = data.get("trinh_do", "")
-    ca = data.get("ca", "Sáng")
     task = Task.query.get(task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
+    task_ca = task.ca_requirement if task.ca_requirement in ["Sáng", "Chiều"] else "Sáng"
+
     query = Employee.query
     if task.bo_phan:
         query = query.filter(Employee.bo_phan == task.bo_phan)
-    if vi_tri_filter:
-        query = query.filter(Employee.vi_tri == vi_tri_filter)
-    if trinh_do_filter:
-        query = query.filter(Employee.trinh_do == trinh_do_filter)
     employees = query.all()
 
     task_date = task.ngay_gio.date() if task.ngay_gio else None
@@ -765,7 +775,7 @@ def assign_ai_suggest():
 
         available = True
         if task_date:
-            existing = check_trung_ca(emp.id, task_date, ca)
+            existing = check_trung_ca(emp.id, task_date, task_ca)
             if existing:
                 available = False
                 score -= 100
@@ -789,33 +799,53 @@ def assign_ai_suggest():
     return jsonify(scored[:task.so_luong_nv * 3])
 
 
+# --- ĐÃ SỬA: Kiểm tra chặt chẽ giới hạn số lượng nhân viên khi lưu ---
 @app.route("/tasks/assign/save", methods=["POST"])
 def assign_save():
     data = request.get_json()
     task_id = data.get("task_id")
     employee_ids = data.get("employee_ids", [])
-    ca = data.get("ca", "Sáng")
+    
     task = Task.query.get(task_id)
     if not task:
-        return jsonify({"error": "Task not found"}), 404
+        return jsonify({"error": "Công việc không tồn tại."}), 404
     if not task.ngay_gio:
-        return jsonify({"error": "Task has no date set"}), 400
+        return jsonify({"error": "Công việc chưa có ngày thực hiện."}), 400
+
+    ca = task.ca_requirement if task.ca_requirement in ["Sáng", "Chiều"] else "Sáng"
+
+    # Đếm số lượng đã gán + số lượng đăng ký mới
+    current_assigned_count = Schedule.query.filter_by(task_id=task.id).count()
+    total_after_assign = current_assigned_count + len(employee_ids)
+
+    if total_after_assign > task.so_luong_nv:
+        return jsonify({
+            "error": f"Vượt quá số lượng quy định! Công việc này cần tối đa {task.so_luong_nv} nhân viên (hiện tại đã phân công {current_assigned_count})."
+        }), 400
 
     ngay = task.ngay_gio.date()
     assigned = []
     errors = []
-    if len(employee_ids) > task.so_luong_nv:
-        return jsonify({"error": f"Không được chọn quá {task.so_luong_nv} nhân viên."}), 400
 
     for eid in employee_ids:
+        # Check xem nhân viên đã có trong task này chưa
+        already_in_task = Schedule.query.filter_by(employee_id=eid, task_id=task_id).first()
+        if already_in_task:
+            emp = Employee.query.get(eid)
+            errors.append(f"Nhân viên '{emp.ho_ten}' đã thuộc công việc này.")
+            continue
+
+        # Check trùng ca làm việc trong ngày
         trung = check_trung_ca(eid, ngay, ca)
         if trung:
             emp = Employee.query.get(eid)
-            errors.append(f"Nhân viên '{emp.ho_ten}' đã có lịch ca {ca}")
+            errors.append(f"Nhân viên '{emp.ho_ten}' đã có lịch trùng ở ca {ca}.")
             continue
+
         sch = Schedule(employee_id=eid, task_id=task_id, ngay_lam_viec=ngay, ca=ca)
         db.session.add(sch)
         assigned.append(eid)
+
     db.session.commit()
     touch_last_update()
     return jsonify({"assigned": len(assigned), "errors": errors})
@@ -938,8 +968,10 @@ def page_add():
 @app.route("/import-data", methods=["GET", "POST"])
 def import_data_page():
     imported_count = 0
+    updated_count = 0
     skipped_count = 0
     summary = []
+
     if request.method == "POST":
         import_type = request.form.get("import_type", "employees")
         uploaded_file = request.files.get("file")
@@ -954,8 +986,8 @@ def import_data_page():
             filename = uploaded_file.filename.lower()
             content = uploaded_file.read()
             if filename.endswith(".csv"):
-                text = content.decode("utf-8-sig")
-                rows = list(csv.DictReader(io.StringIO(text)))
+                text_data = content.decode("utf-8-sig")
+                rows = list(csv.DictReader(io.StringIO(text_data)))
             elif filename.endswith(".xlsx"):
                 try:
                     from openpyxl import load_workbook
@@ -991,30 +1023,52 @@ def import_data_page():
             flash("Không tìm thấy dữ liệu hợp lệ trong file hoặc đoạn văn bản đã nhập.", "danger")
             return redirect(url_for("import_data_page"))
 
+        # -----------------------------------------------------------------
+        # 1. NHẬP / CẬP NHẬT NHÂN VIÊN (EMPLOYEES)
+        # -----------------------------------------------------------------
         if import_type == "employees":
             for row in rows:
                 payload = {
                     "ma_nv": normalize_text(row.get("ma_nv") or row.get("Mã nhân viên") or row.get("maNV") or row.get("id")),
-                    "ho_ten": normalize_text(row.get("ho_ten") or row.get("Họ tên") or row.get("hoTen") or row.get("name")),
+                    "ho_ten": normalize_text(row.get("ho_ten") or row.get("Họ tên") or row.get("Họ và tên") or row.get("hoTen") or row.get("name")),
                     "email": normalize_text(row.get("email") or row.get("Email") or row.get("mail")),
                     "bo_phan": normalize_text(row.get("bo_phan") or row.get("Bộ phận") or row.get("department")),
                     "vi_tri": normalize_text(row.get("vi_tri") or row.get("Vị trí") or row.get("position")),
                     "trinh_do": normalize_text(row.get("trinh_do") or row.get("Trình độ") or row.get("level")) or "Cơ bản",
                 }
+                
                 errors = validate_employee_payload(payload)
                 if errors:
                     skipped_count += 1
                     summary.append({"row": row, "errors": errors})
                     continue
-                if Employee.query.filter_by(ma_nv=payload["ma_nv"]).first():
-                    skipped_count += 1
-                    summary.append({"row": row, "errors": [f"Mã nhân viên '{payload['ma_nv']}' đã tồn tại."]})
-                    continue
-                employee = Employee(**payload)
-                db.session.add(employee)
-                imported_count += 1
+
+                # Tìm nhân viên đã tồn tại chưa
+                existing_emp = Employee.query.filter_by(ma_nv=payload["ma_nv"]).first()
+
+                if existing_emp:
+                    # 🔄 CẬP NHẬT thông tin nhân viên đã có
+                    existing_emp.ho_ten = payload["ho_ten"]
+                    existing_emp.email = payload["email"]
+                    existing_emp.bo_phan = payload["bo_phan"]
+                    existing_emp.vi_tri = payload["vi_tri"]
+                    existing_emp.trinh_do = payload["trinh_do"]
+                    updated_count += 1
+                else:
+                    # ➕ THÊM MỚI nhân viên
+                    employee = Employee(**payload)
+                    db.session.add(employee)
+                    imported_count += 1
+
             db.session.commit()
-            flash(f"Đã nhập {imported_count} nhân viên mới, bỏ qua {skipped_count} dòng không hợp lệ.", "success")
+            flash(
+                f"Xử lý hoàn tất! Thêm mới: {imported_count} nhân viên, Cập nhật: {updated_count} nhân viên, Bỏ qua: {skipped_count} dòng lỗi.",
+                "success"
+            )
+
+        # -----------------------------------------------------------------
+        # 2. NHẬP / CẬP NHẬT CÔNG VIỆC (TASKS)
+        # -----------------------------------------------------------------
         else:
             for row in rows:
                 payload = {
@@ -1027,41 +1081,62 @@ def import_data_page():
                     "so_luong_nv": normalize_text(row.get("so_luong_nv") or row.get("Số lượng NV") or row.get("quantity") or "1"),
                     "thoi_luong": normalize_text(row.get("thoi_luong") or row.get("Thời lượng") or row.get("duration") or "1"),
                 }
+
                 errors = validate_task_payload(payload)
                 if errors:
                     skipped_count += 1
                     summary.append({"row": row, "errors": errors})
                     continue
-                if Task.query.filter_by(ma_cv=payload["ma_cv"]).first():
-                    skipped_count += 1
-                    summary.append({"row": row, "errors": [f"Mã công việc '{payload['ma_cv']}' đã tồn tại."]})
-                    continue
+
                 ngay_gio = parse_date_value(payload["ngay_gio"])
                 if ngay_gio is None:
                     skipped_count += 1
                     summary.append({"row": row, "errors": ["Ngày công việc không đúng định dạng."]})
                     continue
-                task = Task(
-                    ma_cv=payload["ma_cv"],
-                    ten_cv=payload["ten_cv"],
-                    ghi_chu=payload["ghi_chu"],
-                    do_uu_tien=payload["do_uu_tien"],
-                    ngay_gio=datetime.combine(ngay_gio, datetime.min.time()),
-                    bo_phan=payload["bo_phan"],
-                    so_luong_nv=int(payload["so_luong_nv"]),
-                    thoi_luong=float(payload["thoi_luong"]),
-                )
-                db.session.add(task)
-                imported_count += 1
+
+                existing_task = Task.query.filter_by(ma_cv=payload["ma_cv"]).first()
+
+                if existing_task:
+                    # 🔄 CẬP NHẬT thông tin công việc đã có
+                    existing_task.ten_cv = payload["ten_cv"]
+                    existing_task.ghi_chu = payload["ghi_chu"]
+                    existing_task.do_uu_tien = payload["do_uu_tien"]
+                    existing_task.ngay_gio = datetime.combine(ngay_gio, datetime.min.time())
+                    existing_task.bo_phan = payload["bo_phan"]
+                    existing_task.so_luong_nv = int(payload["so_luong_nv"])
+                    existing_task.thoi_luong = float(payload["thoi_luong"])
+                    updated_count += 1
+                else:
+                    # ➕ THÊM MỚI công việc
+                    task = Task(
+                        ma_cv=payload["ma_cv"],
+                        ten_cv=payload["ten_cv"],
+                        ghi_chu=payload["ghi_chu"],
+                        do_uu_tien=payload["do_uu_tien"],
+                        ngay_gio=datetime.combine(ngay_gio, datetime.min.time()),
+                        bo_phan=payload["bo_phan"],
+                        so_luong_nv=int(payload["so_luong_nv"]),
+                        thoi_luong=float(payload["thoi_luong"]),
+                    )
+                    db.session.add(task)
+                    imported_count += 1
+
             db.session.commit()
-            flash(f"Đã nhập {imported_count} công việc mới, bỏ qua {skipped_count} dòng không hợp lệ.", "success")
-        return render_template("import_data.html", import_type=import_type, imported_count=imported_count, skipped_count=skipped_count, summary=summary)
+            flash(
+                f"Xử lý hoàn tất! Thêm mới: {imported_count} công việc, Cập nhật: {updated_count} công việc, Bỏ qua: {skipped_count} dòng lỗi.",
+                "success"
+            )
 
-    return render_template("import_data.html", import_type="employees", imported_count=0, skipped_count=0, summary=[])
+        return render_template(
+            "import_data.html",
+            import_type=import_type,
+            imported_count=imported_count,
+            updated_count=updated_count,
+            skipped_count=skipped_count,
+            summary=summary
+        )
 
-
-def seed_data():
-    pass
+    return render_template("import_data.html", import_type="employees", imported_count=0, updated_count=0, skipped_count=0, summary=[])
 
 
 def ensure_task_schema():
